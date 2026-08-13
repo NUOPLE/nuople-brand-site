@@ -1,0 +1,15 @@
+{
+  "buildCommand": "npm run build:vercel",
+  "outputDirectory": "dist/client",
+  "installCommand": "npm install",
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 30,
+      "includeFiles": "dist/server/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/[...slug]" },
+    { "source": "/((?!assets/|favicon|robots\\.txt|static/).*)", "destination": "/index.html" }
+  ]
+}
