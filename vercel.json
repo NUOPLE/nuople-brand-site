@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx tsc -p tsconfig.vercel.json && npx vite build --config vite.standalone.config.ts",
+  "buildCommand": "bash vercel-build.sh",
   "outputDirectory": "dist/client",
-  "installCommand": "npm install",
+  "installCommand": "bash vercel-install.sh",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/[...slug]" },
     {

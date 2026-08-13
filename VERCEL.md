@@ -43,11 +43,13 @@ psql "postgresql://user:pass@host:5432/db" < server/database/init.sql
 Vercel 会自动读取根目录的 `vercel.json`：
 
 - **Framework Preset**: Other
-- **Build Command**: `npx tsc -p tsconfig.vercel.json && npx vite build --config vite.standalone.config.ts`
+- **Install Command**: `bash vercel-install.sh`（自动跳过 fullstack-cli postinstall）
+- **Build Command**: `bash vercel-build.sh`
 - **Output Directory**: `dist/client`
-- **Install Command**: `npm install`
 
 > 以上配置已在 `vercel.json` 中声明，通常不需要手动改。
+
+> 为什么不用 `npm install` 直接装？项目的 `package.json` 中有 `postinstall: "fullstack-cli action-plugin init"`，这是妙搭开发平台的私有工具，在 Vercel 环境不存在，会导致安装失败。`vercel-install.sh` 会临时移除 `postinstall` 和 `prepare` 钩子，安装完依赖后再恢复。
 
 ### 4. 添加环境变量
 
@@ -58,7 +60,7 @@ Vercel 会自动读取根目录的 `vercel.json`：
 ### 5. 点击 Deploy
 
 等待构建完成。构建流程：
-1. `npm install` 安装依赖
+1. `bash vercel-install.sh` — 临时移除 postinstall 钩子 → `npm install` → 恢复 package.json
 2. `tsc -p tsconfig.vercel.json` 编译后端到 `api/_nest/`
 3. `vite build` 构建前端到 `dist/client/`
 4. Vercel 自动检测 `api/[...slug].js` 并打包为 Serverless Function
@@ -67,9 +69,10 @@ Vercel 会自动读取根目录的 `vercel.json`：
 
 | 文件 | 作用 |
 |------|------|
-| `api/[...slug].js` | Vercel Serverless Function 入口，转发所有 /api/* 请求到 NestJS |
-| `api/_nest/paths.js` | 运行时路径别名解析（@server、@shared → 实际路径） |
+| `api/[...slug].js` | Vercel Serverless Function 入口，转发所有 /api/* 请求到 NestJS（内联路径别名解析） |
 | `vercel.json` | Vercel 部署配置 |
+| `vercel-install.sh` | Vercel 安装脚本（绕过 fullstack-cli postinstall） |
+| `vercel-build.sh` | Vercel 构建脚本（后端编译 + 前端构建） |
 | `tsconfig.vercel.json` | 后端 TypeScript 编译配置（CommonJS，输出到 api/_nest/） |
 | `vite.standalone.config.ts` | 前端 Vite 配置（输出到 dist/client） |
 | `server/standalone.module.ts` | NestJS 独立部署 AppModule |
