@@ -1,0 +1,43 @@
+{
+  "name": "nuople-brand-site",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:standalone": "npm run build:standalone-server && npm run build:standalone-client",
+    "build:standalone-server": "NODE_ENV=production nest build --config nest-standalone-cli.json",
+    "build:standalone-client": "NODE_ENV=production vite build --config vite.standalone.config.ts",
+    "start:standalone": "NODE_ENV=production node dist/server/standalone.js",
+    "start": "NODE_ENV=production node dist/server/standalone.js"
+  },
+  "dependencies": {
+    "@nestjs/axios": "^4.0.1",
+    "@nestjs/common": "^10.4.20",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/core": "^10.4.20",
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/platform-express": "^10.4.20",
+    "@nestjs/multer": "^10.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "drizzle-orm": "0.44.6",
+    "postgres": "^3.4.4",
+    "hbs": "^4.2.0",
+    "reflect-metadata": "^0.1.14",
+    "rxjs": "^7.8.2",
+    "tslib": "^2.8.1",
+    "dayjs": "^1.11.15",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.9",
+    "@nestjs/schematics": "^10.2.3",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.18.6",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
+}
