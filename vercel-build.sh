@@ -13,3 +13,10 @@ npx vite build --config vite.standalone.config.ts
 echo "Client built to dist/client/"
 
 echo "=== Build complete ==="
+
+
+echo "=== Vercel Build: Client ==="
+npx vite build --config vite.standalone.config.ts
+echo "Client built to dist/client/"
+
+echo "=== Build complete ==="

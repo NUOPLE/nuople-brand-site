@@ -38,7 +38,13 @@ psql "postgresql://user:pass@host:5432/db" < server/database/init.sql
 
 在 Vercel 点击 **Add New → Project**，选择你的 Git 仓库。
 
-### 3. 配置项目
+### 3. 配置 Node.js 版本
+
+项目要求 Node.js >= 22.0.0（`package.json` 的 `engines` 字段）。`.nvmrc` 文件已设为 `22`，Vercel 会自动识别并安装对应版本。
+
+> 如部署日志显示 `Detected "engines": { "node": ">=22.0.0" }` 警告但构建正常，可忽略。如构建报错提示 Node 版本不兼容，可在 **Project Settings → Node.js Version** 手动选择 22.x。
+
+### 4. 配置项目
 
 Vercel 会自动读取根目录的 `vercel.json`：
 
@@ -51,7 +57,7 @@ Vercel 会自动读取根目录的 `vercel.json`：
 
 > 为什么不用 `npm install` 直接装？项目的 `package.json` 中有 `postinstall: "fullstack-cli action-plugin init"`，这是妙搭开发平台的私有工具，在 Vercel 环境不存在，会导致安装失败。`vercel-install.sh` 会临时移除 `postinstall` 和 `prepare` 钩子，安装完依赖后再恢复。
 
-### 4. 添加环境变量
+### 5. 添加环境变量
 
 在 **Project Settings → Environment Variables** 中添加：
 - `DATABASE_URL`

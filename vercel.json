@@ -3,6 +3,11 @@
   "buildCommand": "bash vercel-build.sh",
   "outputDirectory": "dist/client",
   "installCommand": "bash vercel-install.sh",
+  "functions": {
+    "api/[...slug].js": {
+      "includeFiles": "api/_nest/**"
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/[...slug]" },
     {

@@ -12,7 +12,7 @@
     "sourceMap": false,
     "outDir": "./api/_nest",
     "baseUrl": "./",
-    "incremental": true,
+    "incremental": false,
     "skipLibCheck": true,
     "strictNullChecks": false,
     "noImplicitAny": false,
@@ -30,6 +30,11 @@
   "include": [
     "server/**/*.ts",
     "shared/**/*.ts"
+  ],
+  "files": [
+    "server/standalone.module.ts",
+    "server/database/schema.ts",
+    "shared/api.interface.ts"
   ],
   "exclude": [
     "node_modules",
