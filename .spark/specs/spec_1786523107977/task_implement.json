@@ -1,0 +1,311 @@
+{
+  "tasks": [
+    {
+      "id": 1,
+      "type": "app_init",
+      "name": "应用初始化任务",
+      "status": "completed",
+      "subtasks": [
+        "初始化布局导航文件Layout",
+        "初始化主题文件",
+        "初始化占位页面和路由",
+        "本任务以编译与日志检查为界，日志确认无错即提交；运行时核验统一由验收测试任务承担"
+      ],
+      "beginTime": 1786523265899,
+      "endTime": 1786523471612
+    },
+    {
+      "id": 2,
+      "name": "代码架构设计与全局骨架搭建",
+      "type": "normal",
+      "status": "completed",
+      "subtasks": [
+        "读取 coding-guide skill，确认项目结构与编码规范",
+        "搭建左侧导航 + 顶部栏 + 内容区的后台 Layout 骨架",
+        "配置前端路由：登录页、仪表盘、作品管理、留言管理、客服设置、网站设置",
+        "实现前端路由鉴权守卫（未登录跳转登录页）",
+        "搭建服务端模块目录骨架并注册到 app.module",
+        "实现服务端 AdminAuthGuard 认证守卫",
+        "定义 shared 类型：作品、留言、关键词规则、网站设置的 DTO 接口",
+        "封装 axios 拦截器与统一 API 请求错误处理"
+      ],
+      "write_scope": [
+        "client/src/app.tsx",
+        "client/src/layouts/**",
+        "client/src/lib/api.ts",
+        "server/modules/auth/**",
+        "server/app.module.ts",
+        "shared/**"
+      ],
+      "read_scope": [
+        "server/database/schema.ts",
+        "server/app.module.ts",
+        "client/src/index.tsx"
+      ],
+      "acceptance": "左侧导航 + 顶部栏 Layout 可正常渲染，所有路由可访问占位页，服务端模块编译通过",
+      "dependencies": [],
+      "beginTime": 1786523471799,
+      "endTime": 1786524075258
+    },
+    {
+      "id": 3,
+      "name": "数据库表创建与种子数据初始化",
+      "type": "normal",
+      "status": "completed",
+      "subtasks": [
+        "创建 admin 管理员表（username、password_hash）",
+        "创建 work 作品表（标题、分类、客户、封面图、画廊等字段）",
+        "创建 message 留言表（姓名、邮箱、内容、已读状态、回复）",
+        "创建 keyword_rule 关键词规则表（关键词数组、回复内容、排序号）",
+        "创建 site_setting 网站设置表（键值对存储）",
+        "同步数据库 schema 并验证表结构",
+        "插入管理员种子数据（admin / admin123，bcrypt 加密）",
+        "插入 3~5 条示例作品数据",
+        "插入 3 条示例留言数据",
+        "插入网站设置默认配置项",
+        "插入 2~3 条示例关键词规则"
+      ],
+      "write_scope": [
+        "server/database/schema.ts"
+      ],
+      "read_scope": [
+        "server/database/schema.ts"
+      ],
+      "acceptance": "所有数据库表创建成功，种子数据可查询到，管理员账号 admin/admin123 可通过 bcrypt 验证",
+      "dependencies": [
+        2
+      ],
+      "beginTime": 1786524075411,
+      "endTime": 1786524294866
+    },
+    {
+      "id": 4,
+      "name": "认证模块开发（前后端）",
+      "type": "normal",
+      "status": "completed",
+      "subtasks": [
+        "读取 authn-guide skill 了解认证机制",
+        "实现登录页面 UI（居中卡片、用户名密码输入框、登录按钮）",
+        "实现登录失败错误提示展示",
+        "实现登录 API（POST /api/auth/login，校验用户名密码，建立 session）",
+        "实现获取当前用户 API（GET /api/auth/me）",
+        "实现退出登录 API（POST /api/auth/logout）",
+        "实现顶部栏管理员信息展示与退出按钮",
+        "联调：登录成功跳转仪表盘，未登录自动重定向登录页",
+        "联调：退出登录清除状态并返回登录页"
+      ],
+      "write_scope": [
+        "server/modules/auth/**",
+        "client/src/pages/login/**",
+        "client/src/layouts/**"
+      ],
+      "read_scope": [
+        "server/database/schema.ts",
+        "shared/auth.ts"
+      ],
+      "acceptance": "admin/admin123 可成功登录并跳转仪表盘，访问受保护页面未登录时跳转登录页，退出登录后返回登录页",
+      "dependencies": [
+        2,
+        3
+      ],
+      "beginTime": 1786524295061,
+      "endTime": 1786524538612
+    },
+    {
+      "id": 5,
+      "name": "仪表盘模块开发（前后端）",
+      "type": "normal",
+      "status": "completed",
+      "subtasks": [
+        "实现仪表盘统计 API（GET /api/dashboard/stats）",
+        "实现四个数据概览卡片 UI（作品总数、留言总数、未读留言、关键词规则数）",
+        "实现最近留言列表卡片（最新 5 条）",
+        "实现作品分类统计卡片（按 LOGO/VIS/包装分类计数）",
+        "实现快捷操作按钮（新增作品、查看留言、设置关键词）",
+        "联调：统计数据从数据库实时读取并正确展示"
+      ],
+      "write_scope": [
+        "server/modules/dashboard/**",
+        "client/src/pages/dashboard/**"
+      ],
+      "read_scope": [
+        "server/database/schema.ts",
+        "shared/dashboard.ts"
+      ],
+      "acceptance": "仪表盘统计数据与数据库实际数量一致，最近留言显示最新5条，快捷按钮可跳转对应页面",
+      "dependencies": [
+        2,
+        3,
+        4
+      ],
+      "beginTime": 1786524538776,
+      "endTime": 1786525280113
+    },
+    {
+      "id": 6,
+      "name": "作品管理模块开发（前后端）",
+      "type": "normal",
+      "status": "completed",
+      "subtasks": [
+        "读取 client-builtins-file-storage-service skill 了解图片上传",
+        "实现作品列表 API（分页 + 关键词搜索 + 分类筛选）",
+        "实现作品详情 API",
+        "实现新增作品 API",
+        "实现编辑作品 API",
+        "实现删除作品 API",
+        "实现作品列表页 UI（表格、搜索框、分类筛选、分页器）",
+        "实现新增/编辑作品表单页 UI（基础信息、标签输入、图片上传、画廊多图）",
+        "实现图片上传组件（上传、预览、删除）",
+        "实现画廊图片管理（多图上传、布局切换、删除）",
+        "实现删除确认弹窗",
+        "联调：列表搜索筛选分页正常，新增/编辑/删除操作真实落库"
+      ],
+      "write_scope": [
+        "server/modules/work/**",
+        "client/src/pages/works/**",
+        "client/src/components/image-upload/**"
+      ],
+      "read_scope": [
+        "server/database/schema.ts",
+        "shared/work.ts"
+      ],
+      "acceptance": "作品列表可按标题搜索、按分类筛选、分页浏览；新增作品表单完整字段保存成功；编辑可预填并更新；删除有确认弹窗且真实删除",
+      "dependencies": [
+        2,
+        3,
+        4
+      ],
+      "beginTime": 1786524538776,
+      "endTime": 1786525280113
+    },
+    {
+      "id": 7,
+      "name": "留言管理模块开发（前后端）",
+      "type": "normal",
+      "status": "completed",
+      "subtasks": [
+        "实现留言列表 API（分页 + 状态筛选，返回总数与未读数）",
+        "实现留言详情 API",
+        "实现标记已读/未读 API",
+        "实现回复留言 API",
+        "实现删除留言 API",
+        "实现留言列表页 UI（统计数字、状态筛选标签、数据表格）",
+        "实现留言详情抽屉（右侧滑出、完整信息、回复区域）",
+        "实现标记已读/未读切换操作",
+        "实现删除确认弹窗",
+        "联调：列表筛选分页正常，详情抽屉展示完整，回复保存成功，状态切换实时生效"
+      ],
+      "write_scope": [
+        "server/modules/message/**",
+        "client/src/pages/messages/**"
+      ],
+      "read_scope": [
+        "server/database/schema.ts",
+        "shared/message.ts"
+      ],
+      "acceptance": "留言列表可按状态筛选、分页；详情抽屉展示完整留言和回复；标记已读/未读状态实时变化；删除有确认且真实删除",
+      "dependencies": [
+        2,
+        3,
+        4
+      ],
+      "beginTime": 1786524538776,
+      "endTime": 1786525280113
+    },
+    {
+      "id": 8,
+      "name": "智能客服关键词规则模块开发（前后端）",
+      "type": "normal",
+      "status": "completed",
+      "subtasks": [
+        "实现关键词规则列表 API（按排序号升序）",
+        "实现新增规则 API",
+        "实现编辑规则 API",
+        "实现删除规则 API",
+        "实现规则排序移动 API（上移/下移，交换 sortOrder）",
+        "实现关键词规则列表页 UI（规则说明、数据表格、新增按钮）",
+        "实现新增/编辑规则弹窗（关键词输入、回复内容文本框、表单校验）",
+        "实现上移/下移排序操作",
+        "实现删除确认弹窗",
+        "联调：增删改查正常，排序调整后列表顺序实时更新"
+      ],
+      "write_scope": [
+        "server/modules/keyword-rule/**",
+        "client/src/pages/keyword-rules/**"
+      ],
+      "read_scope": [
+        "server/database/schema.ts",
+        "shared/keyword-rule.ts"
+      ],
+      "acceptance": "关键词规则可增删改查；上移下移调整顺序后列表顺序变化且持久化；删除有确认弹窗",
+      "dependencies": [
+        2,
+        3,
+        4
+      ],
+      "beginTime": 1786524538776,
+      "endTime": 1786525280113
+    },
+    {
+      "id": 9,
+      "name": "网站设置模块开发（前后端）",
+      "type": "normal",
+      "status": "completed",
+      "subtasks": [
+        "实现获取网站设置 API（读取所有 setting_key 并组装为对象返回）",
+        "实现保存网站设置 API（批量 upsert 各配置项）",
+        "实现网站设置页 UI：基本信息区块（标题、公司名、Logo上传）",
+        "实现首页设置区块（Hero标语、副标题）",
+        "实现关于我们区块（多行文本）",
+        "实现服务设置区块（三个服务项）",
+        "实现设计流程区块（四个步骤）",
+        "实现联系信息区块（电话、邮箱、地址）",
+        "实现页脚信息区块（版权、社交链接）",
+        "实现底部保存栏与成功提示",
+        "联调：保存后数据库更新，重新进入页面数据正确回显"
+      ],
+      "write_scope": [
+        "server/modules/site-setting/**",
+        "client/src/pages/site-settings/**"
+      ],
+      "read_scope": [
+        "server/database/schema.ts",
+        "shared/site-setting.ts"
+      ],
+      "acceptance": "所有设置区块正常展示与编辑；点击保存后数据写入数据库；刷新页面后数据正确回显",
+      "dependencies": [
+        2,
+        3,
+        4
+      ],
+      "beginTime": 1786524538776,
+      "endTime": 1786525280113
+    },
+    {
+      "id": 10,
+      "name": "验收测试",
+      "type": "normal",
+      "status": "completed",
+      "subtasks": [
+        "读取 testing-guide skill",
+        "架构与入口检查：登录页可达，登录后进入仪表盘，左侧导航 6 个菜单项齐全",
+        "核心验收目标1：作品管理完整 CRUD —— 新增作品（含图片上传和画廊多图）后列表出现，编辑保存后字段更新，删除确认后列表消失",
+        "核心验收目标2：留言管理完整流程 —— 留言列表可筛选未读/已读，查看详情打开抽屉，提交回复后显示回复内容和时间，标记状态切换",
+        "核心验收目标3：系统配置完整可用 —— 关键词规则可增删改与排序调整，网站设置保存后刷新回显，退出登录返回登录页",
+        "非核心降级范围：图片上传后的 CDN 加速效果、数据统计的精确秒级实时性、UI 像素级还原度"
+      ],
+      "write_scope": [],
+      "read_scope": [],
+      "acceptance": "三个核心验收目标全部通过，应用可正常登录使用，各模块增删改查功能完整",
+      "dependencies": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "beginTime": 1786525280305,
+      "endTime": 1786527568294
+    }
+  ]
+}

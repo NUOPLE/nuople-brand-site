@@ -1,0 +1,32 @@
+@import '@lark-apaas/client-toolkit/lib/index.css';
+@import "tw-animate-css";
+@import "./tailwind-theme.css";
+@import "./typography.css";
+
+@source "../../node_modules/streamdown/dist/*.js";
+@config "../../tailwind.config.ts";
+
+html {
+  scroll-behavior: smooth;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.8s ease-out;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
