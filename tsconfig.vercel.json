@@ -10,7 +10,7 @@
     "target": "ES2022",
     "lib": ["ES2022"],
     "sourceMap": false,
-    "outDir": "./dist/server",
+    "outDir": "./api/_nest",
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,

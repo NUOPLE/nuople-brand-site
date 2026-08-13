@@ -1,15 +1,13 @@
 {
-  "buildCommand": "npm run build:vercel",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npx tsc -p tsconfig.vercel.json && npx vite build --config vite.standalone.config.ts",
   "outputDirectory": "dist/client",
   "installCommand": "npm install",
-  "functions": {
-    "api/**/*.js": {
-      "maxDuration": 30,
-      "includeFiles": "dist/server/**"
-    }
-  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/[...slug]" },
-    { "source": "/((?!assets/|favicon|robots\\.txt|static/).*)", "destination": "/index.html" }
+    {
+      "source": "/((?!assets/|favicon/|favicon\\.ico|robots\\.txt|static/|.*\\.png$|.*\\.jpg$|.*\\.jpeg$|.*\\.svg$|.*\\.webp$|.*\\.gif$|.*\\.ico$).*)",
+      "destination": "/index.html"
+    }
   ]
 }
