@@ -1,5 +1,5 @@
-import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
-import type { Response } from 'express';
+import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import type { Response, Request } from 'express';
 import { BusinessException } from '../interfaces/exception.interface';
 import { HTTP_STATUS_TO_RESPONSE_CODE_MAP, ResponseCode } from '../constants/api_response_code';
 import { ApiErrorResponse } from '../interfaces/api_response.interface';
@@ -7,11 +7,24 @@ import { ApiErrorResponse } from '../interfaces/api_response.interface';
 // 全局异常过滤器，用于捕获所有未处理的异常
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger('GlobalExceptionFilter');
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-     
-    // 如果响应头已发送，则不处理
+    const request = ctx.getRequest<Request>();
+
+    this.logger.error(
+      `${request.method} ${request.url} -> ${
+        exception instanceof Error ? exception.message : String(exception)
+      }`,
+      exception instanceof Error ? exception.stack : undefined,
+    );
+
+    if (exception instanceof Error && exception.cause) {
+      this.logger.error(`Error cause: ${JSON.stringify(exception.cause)}`);
+    }
+
     if (response.headersSent) {
       return;
     }

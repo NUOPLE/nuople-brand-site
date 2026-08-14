@@ -26,6 +26,11 @@ export class DatabaseModule implements OnModuleInit {
   onModuleInit() {
     if (process.env.DATABASE_URL) {
       Logger.log('Database module initialized', 'DatabaseModule');
+    } else {
+      Logger.warn(
+        'DATABASE_URL not set, database will not be available',
+        'DatabaseModule',
+      );
     }
   }
 }
