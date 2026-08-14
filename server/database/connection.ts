@@ -41,6 +41,20 @@ export function getDatabase(): ReturnType<typeof drizzle> {
 
   dbInstance = drizzle(sql);
   logger.log('Database connection established');
+
+  sql`SELECT 1`
+    .then(() => {
+      logger.log('Database connection verified (SELECT 1 OK)');
+    })
+    .catch((err: unknown) => {
+      logger.error('Connection verification FAILED');
+      if (err instanceof Error) {
+        logger.error(`Message: ${err.message}`);
+        logger.error(`Stack: ${err.stack}`);
+      }
+      dbInstance = null;
+    });
+
   return dbInstance;
 }
 

@@ -14,16 +14,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    this.logger.error(
-      `${request.method} ${request.url} -> ${
-        exception instanceof Error ? exception.message : String(exception)
-      }`,
-      exception instanceof Error ? exception.stack : undefined,
-    );
+    const errMessage =
+      exception instanceof Error ? exception.message : String(exception);
+    const errStack = exception instanceof Error ? exception.stack : undefined;
 
+    this.logger.error(`[GlobalExceptionFilter] ${request.method} ${request.url}`);
+    this.logger.error(`[GlobalExceptionFilter] Error: ${errMessage}`);
+    if (errStack) this.logger.error(`[GlobalExceptionFilter] Stack: ${errStack}`);
     if (exception instanceof Error && exception.cause) {
-      this.logger.error(`Error cause: ${JSON.stringify(exception.cause)}`);
+      this.logger.error(`[GlobalExceptionFilter] Cause: ${JSON.stringify(exception.cause)}`);
     }
+
+    this.logger.error(
+      `${request.method} ${request.url} -> ${errMessage}`,
+      errStack,
+    );
 
     if (response.headersSent) {
       return;

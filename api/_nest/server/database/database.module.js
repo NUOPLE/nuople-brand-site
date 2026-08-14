@@ -14,6 +14,12 @@ let DatabaseModule = class DatabaseModule {
         if (process.env.DATABASE_URL) {
             common_1.Logger.log('Database module initialized', 'DatabaseModule');
         }
+        else {
+            common_1.Logger.warn('DATABASE_URL not set, database will not be available', 'DatabaseModule');
+        }
+    }
+    onApplicationBootstrap() {
+        common_1.Logger.log(`Database URL configured: ${process.env.DATABASE_URL ? 'yes' : 'no'}`, 'DatabaseModule');
     }
 };
 exports.DatabaseModule = DatabaseModule;
@@ -24,11 +30,6 @@ exports.DatabaseModule = DatabaseModule = __decorate([
             {
                 provide: connection_1.DRIZZLE_DATABASE,
                 useFactory: () => {
-                    const databaseUrl = process.env.DATABASE_URL;
-                    if (!databaseUrl) {
-                        common_1.Logger.warn('DATABASE_URL not set, database will not be available', 'DatabaseModule');
-                        return null;
-                    }
                     return (0, connection_1.getDatabase)();
                 },
             },

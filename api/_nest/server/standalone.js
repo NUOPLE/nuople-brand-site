@@ -46,6 +46,10 @@ async function bootstrap() {
     });
     const configService = app.get(config_1.ConfigService);
     const logger = new common_1.Logger('Bootstrap');
+    logger.log('NestJS app created, configuring...');
+    logger.log(`NODE_ENV = ${process.env.NODE_ENV}`);
+    logger.log(`DATABASE_URL ${process.env.DATABASE_URL ? 'is set' : 'NOT SET'}`);
+    logger.log(`JWT_SECRET ${process.env.JWT_SECRET ? 'is set' : 'NOT SET (using default)'}`);
     app.enableCors({
         origin: true,
         credentials: true,

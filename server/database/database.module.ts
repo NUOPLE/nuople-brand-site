@@ -1,4 +1,4 @@
-import { Module, Global, OnModuleInit, Logger } from '@nestjs/common';
+import { Module, Global, OnModuleInit, Logger, OnApplicationBootstrap } from '@nestjs/common';
 
 import { DRIZZLE_DATABASE, getDatabase } from './connection';
 
@@ -8,21 +8,13 @@ import { DRIZZLE_DATABASE, getDatabase } from './connection';
     {
       provide: DRIZZLE_DATABASE,
       useFactory: () => {
-        const databaseUrl = process.env.DATABASE_URL;
-        if (!databaseUrl) {
-          Logger.warn(
-            'DATABASE_URL not set, database will not be available',
-            'DatabaseModule',
-          );
-          return null;
-        }
         return getDatabase();
       },
     },
   ],
   exports: [DRIZZLE_DATABASE],
 })
-export class DatabaseModule implements OnModuleInit {
+export class DatabaseModule implements OnModuleInit, OnApplicationBootstrap {
   onModuleInit() {
     if (process.env.DATABASE_URL) {
       Logger.log('Database module initialized', 'DatabaseModule');
@@ -32,5 +24,12 @@ export class DatabaseModule implements OnModuleInit {
         'DatabaseModule',
       );
     }
+  }
+
+  onApplicationBootstrap() {
+    Logger.log(
+      `Database URL configured: ${process.env.DATABASE_URL ? 'yes' : 'no'}`,
+      'DatabaseModule',
+    );
   }
 }

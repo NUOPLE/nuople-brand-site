@@ -11,9 +11,21 @@ const common_1 = require("@nestjs/common");
 const exception_interface_1 = require("../interfaces/exception.interface");
 const api_response_code_1 = require("../constants/api_response_code");
 let GlobalExceptionFilter = class GlobalExceptionFilter {
+    logger = new common_1.Logger('GlobalExceptionFilter');
     catch(exception, host) {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse();
+        const request = ctx.getRequest();
+        const errMessage = exception instanceof Error ? exception.message : String(exception);
+        const errStack = exception instanceof Error ? exception.stack : undefined;
+        this.logger.error(`[GlobalExceptionFilter] ${request.method} ${request.url}`);
+        this.logger.error(`[GlobalExceptionFilter] Error: ${errMessage}`);
+        if (errStack)
+            this.logger.error(`[GlobalExceptionFilter] Stack: ${errStack}`);
+        if (exception instanceof Error && exception.cause) {
+            this.logger.error(`[GlobalExceptionFilter] Cause: ${JSON.stringify(exception.cause)}`);
+        }
+        this.logger.error(`${request.method} ${request.url} -> ${errMessage}`, errStack);
         if (response.headersSent) {
             return;
         }
