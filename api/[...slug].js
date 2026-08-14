@@ -45,8 +45,10 @@ async function createApp() {
 
     console.log('[VercelHandler] Bootstrapping NestFactory...');
     const { StandaloneAppModule } = require('./_nest/server/standalone.module.js');
+
     const app = await NestFactory.create(StandaloneAppModule, adapter, {
       logger: ['error', 'warn', 'log'],
+      abortOnError: false,
     });
 
     app.enableCors({

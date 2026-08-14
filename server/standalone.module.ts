@@ -1,5 +1,5 @@
 import { APP_FILTER } from '@nestjs/core';
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { GlobalExceptionFilter } from './common/filters/exception.filter';
@@ -33,4 +33,8 @@ import { PublicModule } from './modules/public/public.module';
     },
   ],
 })
-export class StandaloneAppModule {}
+export class StandaloneAppModule implements OnModuleInit {
+  onModuleInit() {
+    Logger.log('StandaloneAppModule initialized', 'AppModule');
+  }
+}
