@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitAny": false,
+    "noFallthroughCasesInSwitch": false,
+    "sourceMap": true,
+    "allowJs": true,
+    "strictNullChecks": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": "./",
+    "paths": {
+      "@client/*": ["./*"],
+      "@shared/*": ["../shared/*"],
+      "@/*": ["./src/*"],
+      "@lark-apaas/client-toolkit/tools/*": ["../node_modules/@lark-apaas/client-toolkit/lib/apis/tools/*"]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "../shared/**/*"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../dist",
+    "public",
+    "../source_package",
+    "src/api/gen"
+  ]
+}
