@@ -10,6 +10,7 @@ exports.GlobalExceptionFilter = void 0;
 const common_1 = require("@nestjs/common");
 const exception_interface_1 = require("../interfaces/exception.interface");
 const api_response_code_1 = require("../constants/api_response_code");
+const rawError = globalThis.console.error.bind(globalThis.console);
 let GlobalExceptionFilter = class GlobalExceptionFilter {
     logger = new common_1.Logger('GlobalExceptionFilter');
     catch(exception, host) {
@@ -24,6 +25,13 @@ let GlobalExceptionFilter = class GlobalExceptionFilter {
             this.logger.error(`[GlobalExceptionFilter] Stack: ${errStack}`);
         if (exception instanceof Error && exception.cause) {
             this.logger.error(`[GlobalExceptionFilter] Cause: ${JSON.stringify(exception.cause)}`);
+        }
+        rawError(`[GlobalExceptionFilter] CONSOLE ${request.method} ${request.url} -> ${errMessage}`);
+        if (errStack) {
+            rawError(`[GlobalExceptionFilter] Stack:\n${errStack}`);
+        }
+        if (exception instanceof Error && exception.cause) {
+            rawError(`[GlobalExceptionFilter] Cause: ${JSON.stringify(exception.cause)}`);
         }
         this.logger.error(`${request.method} ${request.url} -> ${errMessage}`, errStack);
         if (response.headersSent) {

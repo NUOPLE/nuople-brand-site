@@ -33,6 +33,13 @@ console.log(
     process.env.DATABASE_URL ? 'is set' : 'NOT SET'
   }`,
 );
+console.log(
+  `[VercelHandler] DATABASE_URL prefix: ${
+    process.env.DATABASE_URL
+      ? process.env.DATABASE_URL.split('@')[1]?.split('/')[0] || 'unknown host'
+      : 'n/a'
+  }`,
+);
 
 let cachedApp = null;
 let initError = null;
@@ -41,6 +48,22 @@ async function createApp() {
   try {
     console.log('[VercelHandler] Creating Express app...');
     const expressApp = express();
+
+    expressApp.use((req, res, next) => {
+      const start = Date.now();
+      console.log(`[ReqTrace] IN  ${req.method} ${req.url}`);
+
+      const origEnd = res.end;
+      res.end = function (...args) {
+        console.log(
+          `[ReqTrace] OUT ${req.method} ${req.url} -> ${res.statusCode} (${Date.now() - start}ms)`,
+        );
+        return origEnd.apply(this, args);
+      };
+
+      next();
+    });
+
     const adapter = new ExpressAdapter(expressApp);
 
     console.log('[VercelHandler] Bootstrapping NestFactory...');
@@ -60,16 +83,36 @@ async function createApp() {
     await app.init();
     console.log('[VercelHandler] app.init() completed successfully');
 
+    const httpServer = app.getHttpServer();
+    const router = httpServer._events.request._router;
+    const routeList = router.stack
+      .filter((layer) => layer.route)
+      .map(
+        (layer) =>
+          `${Object.keys(layer.route.methods)[0].toUpperCase()} ${layer.route.path}`,
+      );
+    console.log(
+      `[VercelHandler] Registered ${routeList.length} routes: ${routeList.join(', ')}`,
+    );
+
     expressApp.use((err, req, res, next) => {
       console.error(
-        `[VercelHandler] Express error: ${req.method} ${req.url}`,
+        `[ExpressErrorMW] ERROR for ${req.method} ${req.url}`,
       );
-      console.error(`[VercelHandler] Message: ${err?.message}`);
-      console.error(`[VercelHandler] Stack: ${err?.stack}`);
+      console.error(`[ExpressErrorMW] name: ${err?.name}`);
+      console.error(`[ExpressErrorMW] message: ${err?.message}`);
+      console.error(`[ExpressErrorMW] stack: ${err?.stack}`);
       if (err?.cause) {
-        console.error(`[VercelHandler] Cause: ${JSON.stringify(err.cause)}`);
+        try {
+          console.error(`[ExpressErrorMW] cause: ${JSON.stringify(err.cause)}`);
+        } catch {
+          console.error(`[ExpressErrorMW] cause: [unserializable] ${err.cause}`);
+        }
       }
-      if (res.headersSent) return next(err);
+      if (res.headersSent) {
+        console.error('[ExpressErrorMW] headers already sent');
+        return next(err);
+      }
       res.status(500).json({
         error: {
           code: 'INTERNAL_ERROR',
@@ -86,7 +129,11 @@ async function createApp() {
     console.error(`[VercelHandler] Message: ${err?.message}`);
     console.error(`[VercelHandler] Stack: ${err?.stack}`);
     if (err?.cause) {
-      console.error(`[VercelHandler] Cause: ${JSON.stringify(err.cause)}`);
+      try {
+        console.error(`[VercelHandler] Cause: ${JSON.stringify(err.cause)}`);
+      } catch {
+        console.error(`[VercelHandler] Cause: [unserializable]`);
+      }
     }
     initError = err;
     throw err;
@@ -128,5 +175,39 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  return cachedApp(req, res);
+  console.log(`[VercelHandler] Forwarding to Express: ${req.method} ${req.url}`);
+  try {
+    cachedApp(req, res, (err) => {
+      if (err) {
+        console.error(
+          `[VercelHandler] Express third-arg error for ${req.method} ${req.url}`,
+        );
+        console.error(`[VercelHandler] Message: ${err?.message}`);
+        console.error(`[VercelHandler] Stack: ${err?.stack}`);
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: '服务器内部错误',
+              details: err?.message,
+              timestamp: Date.now(),
+            },
+          });
+        }
+      }
+    });
+  } catch (err) {
+    console.error(`[VercelHandler] SYNC ERROR: ${err?.message}`);
+    console.error(`[VercelHandler] Stack: ${err?.stack}`);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: '处理请求失败',
+          details: err?.message,
+          timestamp: Date.now(),
+        },
+      });
+    }
+  }
 };

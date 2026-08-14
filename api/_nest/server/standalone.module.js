@@ -21,6 +21,9 @@ const keyword_rule_module_1 = require("./modules/keyword-rule/keyword-rule.modul
 const site_setting_module_1 = require("./modules/site-setting/site-setting.module");
 const public_module_1 = require("./modules/public/public.module");
 let StandaloneAppModule = class StandaloneAppModule {
+    onModuleInit() {
+        common_1.Logger.log('StandaloneAppModule initialized', 'AppModule');
+    }
 };
 exports.StandaloneAppModule = StandaloneAppModule;
 exports.StandaloneAppModule = StandaloneAppModule = __decorate([

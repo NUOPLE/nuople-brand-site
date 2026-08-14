@@ -4,6 +4,8 @@ import { BusinessException } from '../interfaces/exception.interface';
 import { HTTP_STATUS_TO_RESPONSE_CODE_MAP, ResponseCode } from '../constants/api_response_code';
 import { ApiErrorResponse } from '../interfaces/api_response.interface';
 
+const rawError = globalThis.console.error.bind(globalThis.console);
+
 // 全局异常过滤器，用于捕获所有未处理的异常
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -23,6 +25,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (errStack) this.logger.error(`[GlobalExceptionFilter] Stack: ${errStack}`);
     if (exception instanceof Error && exception.cause) {
       this.logger.error(`[GlobalExceptionFilter] Cause: ${JSON.stringify(exception.cause)}`);
+    }
+
+    rawError(`[GlobalExceptionFilter] CONSOLE ${request.method} ${request.url} -> ${errMessage}`);
+    if (errStack) {
+      rawError(`[GlobalExceptionFilter] Stack:\n${errStack}`);
+    }
+    if (exception instanceof Error && exception.cause) {
+      rawError(`[GlobalExceptionFilter] Cause: ${JSON.stringify(exception.cause)}`);
     }
 
     this.logger.error(
