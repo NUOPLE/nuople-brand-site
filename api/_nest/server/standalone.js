@@ -57,11 +57,6 @@ async function bootstrap() {
         transformOptions: { enableImplicitConversion: true },
     }));
     app.useGlobalFilters(new exception_filter_1.GlobalExceptionFilter());
-    const uploadDir = (0, path_1.join)(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    app.useStaticAssets(uploadDir, { prefix: '/uploads' });
     const clientDistDir = (0, path_1.join)(process.cwd(), 'dist', 'client');
     if (fs.existsSync(clientDistDir)) {
         app.useStaticAssets(clientDistDir, { index: false });

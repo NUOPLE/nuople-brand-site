@@ -12,7 +12,6 @@ import { MessageModule } from './modules/message/message.module';
 import { KeywordRuleModule } from './modules/keyword-rule/keyword-rule.module';
 import { SiteSettingModule } from './modules/site-setting/site-setting.module';
 import { PublicModule } from './modules/public/public.module';
-import { UploadModule } from './modules/upload/upload.module';
 
 @Module({
   imports: [
@@ -25,7 +24,6 @@ import { UploadModule } from './modules/upload/upload.module';
     KeywordRuleModule,
     SiteSettingModule,
     PublicModule,
-    UploadModule,
     ViewModule,
   ],
   providers: [

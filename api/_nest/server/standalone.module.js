@@ -20,7 +20,6 @@ const message_module_1 = require("./modules/message/message.module");
 const keyword_rule_module_1 = require("./modules/keyword-rule/keyword-rule.module");
 const site_setting_module_1 = require("./modules/site-setting/site-setting.module");
 const public_module_1 = require("./modules/public/public.module");
-const upload_module_1 = require("./modules/upload/upload.module");
 let StandaloneAppModule = class StandaloneAppModule {
 };
 exports.StandaloneAppModule = StandaloneAppModule;
@@ -36,7 +35,6 @@ exports.StandaloneAppModule = StandaloneAppModule = __decorate([
             keyword_rule_module_1.KeywordRuleModule,
             site_setting_module_1.SiteSettingModule,
             public_module_1.PublicModule,
-            upload_module_1.UploadModule,
             view_module_1.ViewModule,
         ],
         providers: [

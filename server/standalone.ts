@@ -32,12 +32,6 @@ async function bootstrap() {
 
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  const uploadDir = join(process.cwd(), 'uploads');
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
-  app.useStaticAssets(uploadDir, { prefix: '/uploads' });
-
   const clientDistDir = join(process.cwd(), 'dist', 'client');
   if (fs.existsSync(clientDistDir)) {
     app.useStaticAssets(clientDistDir, { index: false });
