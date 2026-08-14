@@ -15,7 +15,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'client/src'),
       '@client': path.resolve(__dirname, 'client'),
       '@shared': path.resolve(__dirname, 'shared'),
-      '@/inspector.dev.css': path.resolve(__dirname, 'node_modules/@lark-apaas/fullstack-vite-preset/src/empty.css'),
+      '@/inspector.dev.css': path.resolve(__dirname, 'client/src/inspector.dev.css'),
     },
   },
   build: {
