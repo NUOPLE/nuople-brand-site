@@ -6,19 +6,31 @@ import {
   OnApplicationBootstrap,
 } from '@nestjs/common';
 
-import {
-  DRIZZLE_DATABASE,
-  getDatabase,
-  getDatabaseInitPromise,
-} from './connection';
+import { DRIZZLE_DATABASE, getDatabase } from './connection';
 
 @Global()
 @Module({
   providers: [
     {
       provide: DRIZZLE_DATABASE,
-      useFactory: () => {
-        return getDatabase();
+      useFactory: async () => {
+        const db = getDatabase();
+        const initPromise = (db as unknown as {
+          $initPromise?: Promise<void>;
+        }).$initPromise;
+        if (initPromise) {
+          try {
+            await initPromise;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            Logger.error(
+              `Database connection failed: ${msg}`,
+              'DatabaseModule',
+            );
+            throw new Error(`Database connection failed: ${msg}`);
+          }
+        }
+        return db;
       },
     },
   ],
@@ -29,7 +41,7 @@ export class DatabaseModule
 {
   onModuleInit() {
     if (process.env.DATABASE_URL) {
-      Logger.log('Database module initialized', 'DatabaseModule');
+      Logger.log('Database module initializing...', 'DatabaseModule');
     } else {
       Logger.warn(
         'DATABASE_URL not set, database will not be available',
@@ -38,27 +50,7 @@ export class DatabaseModule
     }
   }
 
-  async onApplicationBootstrap(): Promise<void> {
-    Logger.log(
-      `Database URL configured: ${process.env.DATABASE_URL ? 'yes' : 'no'}`,
-      'DatabaseModule',
-    );
-    const initPromise = getDatabaseInitPromise();
-    if (initPromise) {
-      const t0 = Date.now();
-      Logger.log('Waiting for database connection warmup...', 'DatabaseModule');
-      try {
-        await initPromise;
-        Logger.log(
-          `Database warmup completed in ${Date.now() - t0}ms`,
-          'DatabaseModule',
-        );
-      } catch (err) {
-        Logger.error(
-          `Database warmup failed: ${err instanceof Error ? err.message : String(err)}`,
-          'DatabaseModule',
-        );
-      }
-    }
+  onApplicationBootstrap() {
+    Logger.log('Database module ready', 'DatabaseModule');
   }
 }
