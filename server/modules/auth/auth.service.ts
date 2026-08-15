@@ -185,8 +185,17 @@ export class AuthService {
         );
         try {
           await this.ensureDefaultAdmin();
-        } catch {
-          throw new UnauthorizedException('用户名或密码错误');
+          rawLog(`[Login] ensureDefaultAdmin completed successfully`);
+        } catch (createErr) {
+          const msg =
+            createErr instanceof Error ? createErr.message : String(createErr);
+          rawError(
+            `[Login] ensureDefaultAdmin FAILED: ${msg}. Login will be rejected.`,
+          );
+          if (createErr instanceof Error && createErr.stack) {
+            rawError(`[Login] ensureDefaultAdmin stack: ${createErr.stack}`);
+          }
+          throw new UnauthorizedException('服务暂时不可用，请稍后重试');
         }
 
         try {
@@ -207,12 +216,12 @@ export class AuthService {
           const msg =
             dbErr instanceof Error ? dbErr.message : String(dbErr);
           rawError(`[Login] Re-select after create FAILED: ${msg}`);
-          throw new UnauthorizedException('用户名或密码错误');
+          throw new UnauthorizedException('服务暂时不可用，请稍后重试');
         }
 
         if (rows.length === 0) {
           rawError(`[Login] Admin still not found after creation attempt`);
-          throw new UnauthorizedException('用户名或密码错误');
+          throw new UnauthorizedException('服务暂时不可用，请稍后重试');
         }
       } else {
         rawLog(`[Login] User not found: ${dto.username}`);
