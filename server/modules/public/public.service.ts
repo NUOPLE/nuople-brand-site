@@ -1,8 +1,36 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { eq, and, like, count, desc, asc } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { DRIZZLE_DATABASE } from '../../database/connection';
+
+const DB_TIMEOUT_MS = 8000;
+const logger = new Logger('PublicService');
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err = new Error(`DB operation timed out after ${ms}ms: ${label}`);
+      rawError(`[PublicService] TIMEOUT: ${label} after ${ms}ms`);
+      reject(err);
+    }, ms);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
 import { work, keywordRule, message, siteSetting } from '../../database/schema';
 import type {
   PublicWorkListItem,
@@ -67,20 +95,49 @@ export class PublicService {
   ) {}
 
   async getFeaturedWorks(limit = 5): Promise<PublicFeaturedWorksResponse> {
-    const items = await this.db
-      .select({
-        id: work.id,
-        title: work.title,
-        category: work.category,
-        client: work.client,
-        year: work.year,
-        description: work.description,
-        coverImage: work.coverImage,
-        tags: work.tags,
-      })
-      .from(work)
-      .orderBy(desc(work.createdAt))
-      .limit(limit);
+    const t0 = Date.now();
+    rawLog(`[Public] getFeaturedWorks limit=${limit}`);
+
+    let items: Array<{
+      id: string;
+      title: string;
+      category: string;
+      client: string;
+      year: string;
+      description: string;
+      coverImage: string;
+      tags: string[];
+    }>;
+
+    try {
+      items = await withTimeout(
+        this.db
+          .select({
+            id: work.id,
+            title: work.title,
+            category: work.category,
+            client: work.client,
+            year: work.year,
+            description: work.description,
+            coverImage: work.coverImage,
+            tags: work.tags,
+          })
+          .from(work)
+          .orderBy(desc(work.createdAt))
+          .limit(limit),
+        DB_TIMEOUT_MS,
+        'get-featured-works',
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      rawError(`[Public] getFeaturedWorks FAILED: ${msg}`);
+      logger.error(`getFeaturedWorks failed: ${msg}`);
+      return { items: [] };
+    }
+
+    rawLog(
+      `[Public] getFeaturedWorks done: ${items.length} items in ${Date.now() - t0}ms`,
+    );
 
     return {
       items: items.map((row) => ({
@@ -207,7 +264,32 @@ export class PublicService {
   }
 
   async getSiteSettings(): Promise<PublicSiteSettings> {
-    const rows = await this.db.select().from(siteSetting);
+    const t0 = Date.now();
+    rawLog(`[Public] getSiteSettings`);
+
+    let rows: Array<{ settingKey: string; settingValue: string }>;
+    try {
+      rows = (await withTimeout(
+        this.db
+          .select({
+            settingKey: siteSetting.settingKey,
+            settingValue: siteSetting.settingValue,
+          })
+          .from(siteSetting),
+        DB_TIMEOUT_MS,
+        'get-site-settings',
+      )) as Array<{ settingKey: string; settingValue: string }>;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      rawError(`[Public] getSiteSettings FAILED: ${msg}`);
+      logger.error(`getSiteSettings failed: ${msg}`);
+      return DEFAULT_SETTINGS;
+    }
+
+    rawLog(
+      `[Public] getSiteSettings done: ${rows.length} rows in ${Date.now() - t0}ms`,
+    );
+
     const map = new Map<string, string>();
     for (const row of rows) {
       map.set(row.settingKey, row.settingValue);
