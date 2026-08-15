@@ -6,34 +6,22 @@ import {
 } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { pbkdf2, randomBytes } from 'crypto';
-import { promisify } from 'util';
 import { JwtService } from '@nestjs/jwt';
 
 import { DRIZZLE_DATABASE } from '../../database/connection';
 import { admin } from '../../database/schema';
+import {
+  hashPassword,
+  verifyPassword,
+} from '../../common/utils/password';
 import type { Admin, LoginRequest } from '@shared/api.interface';
 
-const ITERATIONS = 10000;
-const KEY_LEN = 64;
-const DIGEST = 'sha256';
 const DB_TIMEOUT_MS = 8000;
 const DEFAULT_ADMIN_USERNAME = 'admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin123';
-
-const pbkdf2Async = promisify(pbkdf2);
-const randomBytesAsync = promisify(randomBytes);
 const logger = new Logger('AuthService');
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
-
-export async function hashPassword(password: string): Promise<string> {
-  const salt = (await randomBytesAsync(16)).toString('hex');
-  const hash = (
-    await pbkdf2Async(password, salt, ITERATIONS, KEY_LEN, DIGEST)
-  ).toString('hex');
-  return `SALTED_SHA256$${salt}$${hash}`;
-}
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -71,14 +59,7 @@ export class AuthService {
     password: string,
     passwordHash: string,
   ): Promise<boolean> {
-    const parts = passwordHash.split('$');
-    if (parts.length !== 3 || parts[0] !== 'SALTED_SHA256') return false;
-    const salt = parts[1]!;
-    const expectedHash = parts[2]!;
-    const hash = (
-      await pbkdf2Async(password, salt, ITERATIONS, KEY_LEN, DIGEST)
-    ).toString('hex');
-    return hash === expectedHash;
+    return verifyPassword(password, passwordHash);
   }
 
   private async ensureDefaultAdmin(): Promise<void> {

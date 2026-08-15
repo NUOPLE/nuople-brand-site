@@ -165,27 +165,58 @@ export class PublicService {
     }
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [countResult, items] = await Promise.all([
-      this.db.select({ count: count() }).from(work).where(where),
-      this.db
-        .select({
-          id: work.id,
-          title: work.title,
-          category: work.category,
-          client: work.client,
-          year: work.year,
-          description: work.description,
-          coverImage: work.coverImage,
-          tags: work.tags,
-        })
-        .from(work)
-        .where(where)
-        .orderBy(desc(work.createdAt))
-        .limit(pageSize)
-        .offset((page - 1) * pageSize),
-    ]);
+    const t0 = Date.now();
+    rawLog(`[Public] getWorkList page=${page} pageSize=${pageSize} category=${category || 'all'}`);
 
-    const total = Number(countResult[0]?.count ?? 0);
+    let total = 0;
+    let items: Array<{
+      id: string;
+      title: string;
+      category: string;
+      client: string;
+      year: string;
+      description: string;
+      coverImage: string;
+      tags: string[];
+    }> = [];
+
+    try {
+      const [countResult, workItems] = await withTimeout(
+        Promise.all([
+          this.db.select({ count: count() }).from(work).where(where),
+          this.db
+            .select({
+              id: work.id,
+              title: work.title,
+              category: work.category,
+              client: work.client,
+              year: work.year,
+              description: work.description,
+              coverImage: work.coverImage,
+              tags: work.tags,
+            })
+            .from(work)
+            .where(where)
+            .orderBy(desc(work.createdAt))
+            .limit(pageSize)
+            .offset((page - 1) * pageSize),
+        ]),
+        DB_TIMEOUT_MS,
+        `get-work-list-${page}-${pageSize}-${category || 'all'}`,
+      );
+
+      total = Number(countResult[0]?.count ?? 0);
+      items = workItems;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      rawError(`[Public] getWorkList FAILED: ${msg}`);
+      logger.error(`getWorkList failed: ${msg}`);
+      return { items: [], total: 0 };
+    }
+
+    rawLog(
+      `[Public] getWorkList done: ${items.length} items, total=${total} in ${Date.now() - t0}ms`,
+    );
 
     return {
       items: items.map((row) => ({
@@ -323,14 +354,36 @@ export class PublicService {
   }
 
   async getKeywordRules(): Promise<PublicKeywordRulesResponse> {
-    const rows = await this.db
-      .select({
-        id: keywordRule.id,
-        keywords: keywordRule.keywords,
-        replyContent: keywordRule.replyContent,
-      })
-      .from(keywordRule)
-      .orderBy(asc(keywordRule.sortOrder), asc(keywordRule.createdAt));
+    rawLog('[Public] getKeywordRules');
+    let rows: Array<{
+      id: string;
+      keywords: string[];
+      replyContent: string;
+    }> = [];
+    try {
+      rows = (await withTimeout(
+        this.db
+          .select({
+            id: keywordRule.id,
+            keywords: keywordRule.keywords,
+            replyContent: keywordRule.replyContent,
+          })
+          .from(keywordRule)
+          .orderBy(asc(keywordRule.sortOrder), asc(keywordRule.createdAt)),
+        DB_TIMEOUT_MS,
+        'get-keyword-rules',
+      )) as Array<{
+        id: string;
+        keywords: string[];
+        replyContent: string;
+      }>;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      rawError(`[Public] getKeywordRules FAILED: ${msg}`);
+      logger.error(`getKeywordRules failed: ${msg}`);
+      return { items: [] };
+    }
+    rawLog(`[Public] getKeywordRules done: ${rows.length} rows`);
 
     return {
       items: rows.map((row) => ({
@@ -344,15 +397,30 @@ export class PublicService {
   async submitMessage(
     dto: PublicMessageSubmitRequest,
   ): Promise<PublicMessageSubmitResponse> {
-    const result = await this.db
-      .insert(message)
-      .values({
-        name: dto.name,
-        email: dto.email,
-        content: dto.content,
-        isRead: false,
-      })
-      .returning({ id: message.id });
-    return { success: true, id: result[0]!.id };
+    rawLog(
+      `[Public] submitMessage name=${dto.name} email=${dto.email}`,
+    );
+    try {
+      const result = await withTimeout(
+        this.db
+          .insert(message)
+          .values({
+            name: dto.name,
+            email: dto.email,
+            content: dto.content,
+            isRead: false,
+          })
+          .returning({ id: message.id }),
+        DB_TIMEOUT_MS,
+        'submit-message',
+      );
+      rawLog(`[Public] submitMessage done: id=${result[0]!.id}`);
+      return { success: true, id: result[0]!.id };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      rawError(`[Public] submitMessage FAILED: ${msg}`);
+      logger.error(`submitMessage failed: ${msg}`);
+      throw new Error('留言提交失败，请稍后重试');
+    }
   }
 }
