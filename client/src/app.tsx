@@ -24,6 +24,7 @@ const RoutesComponent = () => {
         <Route path="/work/:id" element={<WorkDetailPage />} />
 
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/admin/login" element={<LoginPage />} />
 
         <Route
           path="/admin"

@@ -43,10 +43,23 @@ const HeroCarousel = () => {
     return () => clearInterval(timer);
   }, [works.length]);
 
-  if (loading || works.length === 0) {
+  if (loading) {
     return (
       <section className="relative h-screen w-full bg-black/5 flex items-center justify-center">
         <div className="text-black/40 text-sm tracking-wider">Loading...</div>
+      </section>
+    );
+  }
+
+  if (works.length === 0) {
+    return (
+      <section className="relative h-screen w-full bg-black/5 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-4xl md:text-6xl font-light text-black/60 tracking-tight mb-4" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+            Brand & Art
+          </h1>
+          <p className="text-black/40 text-sm tracking-wider">精选作品加载中</p>
+        </div>
       </section>
     );
   }
