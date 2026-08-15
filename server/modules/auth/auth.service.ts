@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { pbkdf2Sync, randomBytes } from 'crypto';
+import { pbkdf2, randomBytes } from 'crypto';
+import { promisify } from 'util';
 import { JwtService } from '@nestjs/jwt';
 
 import { DRIZZLE_DATABASE } from '../../database/connection';
@@ -13,9 +14,15 @@ const ITERATIONS = 10000;
 const KEY_LEN = 64;
 const DIGEST = 'sha256';
 
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString('hex');
-  const hash = pbkdf2Sync(password, salt, ITERATIONS, KEY_LEN, DIGEST).toString('hex');
+const pbkdf2Async = promisify(pbkdf2);
+const randomBytesAsync = promisify(randomBytes);
+const logger = new Logger('AuthService');
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = (await randomBytesAsync(16)).toString('hex');
+  const hash = (
+    await pbkdf2Async(password, salt, ITERATIONS, KEY_LEN, DIGEST)
+  ).toString('hex');
   return `SALTED_SHA256$${salt}$${hash}`;
 }
 
@@ -26,30 +33,50 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  private verifyPassword(password: string, passwordHash: string): boolean {
+  private async verifyPassword(
+    password: string,
+    passwordHash: string,
+  ): Promise<boolean> {
     const parts = passwordHash.split('$');
     if (parts.length !== 3 || parts[0] !== 'SALTED_SHA256') return false;
     const salt = parts[1];
     const expectedHash = parts[2];
-    const hash = pbkdf2Sync(password, salt, ITERATIONS, KEY_LEN, DIGEST).toString(
-      'hex',
-    );
+    const hash = (
+      await pbkdf2Async(password, salt, ITERATIONS, KEY_LEN, DIGEST)
+    ).toString('hex');
     return hash === expectedHash;
   }
 
   async login(dto: LoginRequest): Promise<{ admin: Admin; token: string }> {
+    const t0 = Date.now();
+
     const rows = await this.db
-      .select({ id: admin.id, username: admin.username, passwordHash: admin.passwordHash })
+      .select({
+        id: admin.id,
+        username: admin.username,
+        passwordHash: admin.passwordHash,
+      })
       .from(admin)
       .where(eq(admin.username, dto.username))
       .limit(1);
+    const t1 = Date.now();
+    logger.log(`[Login] DB query: ${t1 - t0}ms (rows=${rows.length})`);
 
     if (rows.length === 0) {
       throw new UnauthorizedException('用户名或密码错误');
     }
 
     const row = rows[0]!;
-    if (!this.verifyPassword(dto.password, row.passwordHash)) {
+    const passwordValid = await this.verifyPassword(
+      dto.password,
+      row.passwordHash,
+    );
+    const t2 = Date.now();
+    logger.log(
+      `[Login] Password verify: ${t2 - t1}ms (valid=${passwordValid})`,
+    );
+
+    if (!passwordValid) {
       throw new UnauthorizedException('用户名或密码错误');
     }
 
@@ -58,6 +85,9 @@ export class AuthService {
       { sub: row.id, username: row.username },
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' },
     );
+    const t3 = Date.now();
+    logger.log(`[Login] JWT sign: ${t3 - t2}ms, total: ${t3 - t0}ms`);
+
     return { admin: adminUser, token };
   }
 

@@ -36,9 +36,10 @@ export function getDatabase(): ReturnType<typeof drizzle> {
 
   const sql = postgres(databaseUrl, {
     max: 1,
-    idle_timeout: 10,
-    connect_timeout: 10,
+    idle_timeout: 30,
+    connect_timeout: 5,
     ssl,
+    prepare: false,
     connection: {
       application_name: 'nuople-cms',
     },

@@ -29,7 +29,7 @@ export const onUnauthorized = (handler: () => void): (() => void) => {
 
 const apiClient = axios.create({
   baseURL: '/',
-  timeout: 30000,
+  timeout: 60000,
 });
 
 apiClient.interceptors.request.use(
