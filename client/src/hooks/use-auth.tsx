@@ -5,9 +5,8 @@ import {
   useEffect,
   ReactNode,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
 
-import { axiosForBackend, onUnauthorized, setToken, clearToken } from '@client/src/api';
+import { axiosForBackend, setToken, clearToken } from '@client/src/api';
 import type { Admin } from '@shared/api.interface';
 
 interface AuthContextType {
@@ -33,10 +32,15 @@ interface AuthProviderProps {
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [admin, setAdmin] = useState<Admin | null>(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
   const checkAuth = async () => {
     try {
+      const token = localStorage.getItem('admin_token');
+      if (!token) {
+        setAdmin(null);
+        setLoading(false);
+        return;
+      }
       const res = await axiosForBackend.get('/api/auth/me');
       setAdmin(res.data as Admin);
     } catch {
@@ -49,14 +53,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   useEffect(() => {
     void checkAuth();
   }, []);
-
-  useEffect(() => {
-    const cleanup = onUnauthorized(() => {
-      setAdmin(null);
-      navigate('/login', { replace: true });
-    });
-    return cleanup;
-  }, [navigate]);
 
   const login = async (username: string, password: string): Promise<Admin> => {
     const res = await axiosForBackend.post('/api/auth/login', {
@@ -77,7 +73,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     } finally {
       clearToken();
       setAdmin(null);
-      navigate('/login', { replace: true });
     }
   };
 
