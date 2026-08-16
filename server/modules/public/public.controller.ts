@@ -9,6 +9,9 @@ import {
   Query,
 } from '@nestjs/common';
 
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
+
 import { PublicService } from './public.service';
 import type {
   PublicWorkListResponse,
@@ -79,6 +82,9 @@ export class PublicController {
   async submitMessage(
     @Body() body: PublicMessageSubmitRequest,
   ): Promise<PublicMessageSubmitResponse> {
+    rawLog(
+      `[PublicController] POST /api/public/messages: name="${body?.name}" email="${body?.email}" content_len=${body?.content?.length ?? 0}`,
+    );
     if (!body.name?.trim()) {
       throw new BadRequestException('请输入姓名');
     }
@@ -92,6 +98,19 @@ export class PublicController {
     if (!body.content?.trim()) {
       throw new BadRequestException('请输入留言内容');
     }
-    return this.publicService.submitMessage(body);
+    try {
+      const result = await this.publicService.submitMessage(body);
+      rawLog(
+        `[PublicController] Message submitted successfully: id=${result.id}`,
+      );
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      rawError(`[PublicController] submitMessage FAILED: ${msg}`);
+      if (err instanceof Error && err.stack) {
+        rawError(`[PublicController] Stack: ${err.stack}`);
+      }
+      throw err;
+    }
   }
 }

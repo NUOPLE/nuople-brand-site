@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { eq, and, like, count, desc, asc } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -419,8 +419,11 @@ export class PublicService {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[Public] submitMessage FAILED: ${msg}`);
+      if (err instanceof Error && err.stack) {
+        rawError(`[Public] submitMessage Stack: ${err.stack}`);
+      }
       logger.error(`submitMessage failed: ${msg}`);
-      throw new Error('留言提交失败，请稍后重试');
+      throw new BadRequestException('留言提交失败，请稍后重试');
     }
   }
 }

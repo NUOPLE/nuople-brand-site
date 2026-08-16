@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
-
-import { Button } from '@client/src/components/ui/button';
 import { getPublicSiteSettings } from '@client/src/api/public';
 import type { PublicSiteSettings } from '@shared/api.interface';
 import { logger } from '@lark-apaas/client-toolkit/logger';
@@ -86,18 +84,6 @@ const PublicNavbar = () => {
           ))}
         </nav>
 
-        <div className="hidden md:block">
-          <Link to="/admin/dashboard">
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-sm border-black/20 text-xs tracking-wider hover:bg-black hover:text-white hover:border-black transition-all"
-            >
-              Admin
-            </Button>
-          </Link>
-        </div>
-
         <button
           className="md:hidden p-2 -mr-2 text-black"
           onClick={() => setMobileOpen(!mobileOpen)}
@@ -110,7 +96,7 @@ const PublicNavbar = () => {
       {mobileOpen && (
         <div className="md:hidden bg-white border-t border-black/10">
           <nav className="flex flex-col px-6 py-4 gap-4">
-            {navLinks.map((link) => (
+             {navLinks.map((link) => (
               <button
                 key={link.href}
                 onClick={() => handleNavClick(link.href)}
@@ -119,12 +105,6 @@ const PublicNavbar = () => {
                 {link.label}
               </button>
             ))}
-            <Link
-              to="/admin/dashboard"
-              className="text-sm tracking-wider text-black/70 hover:text-black transition-colors uppercase py-2"
-            >
-              Admin
-            </Link>
           </nav>
         </div>
       )}
