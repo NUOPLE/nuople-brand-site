@@ -12,6 +12,36 @@ let initPromise: Promise<void> | null = null;
 let initFailed = false;
 let initError: Error | null = null;
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function verifyWithRetry(
+  sql: ReturnType<typeof postgres>,
+  maxRetries: number,
+  delayMs: number,
+): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+    try {
+      rawLog(`[DB] Connection verify attempt ${attempt}/${maxRetries}...`);
+      await sql`SELECT 1`;
+      rawLog(`[DB] Connection verified on attempt ${attempt}`);
+      return;
+    } catch (err) {
+      lastErr = err;
+      rawError(`[DB] Verify attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`);
+      if (attempt < maxRetries) {
+        rawLog(`[DB] Retrying in ${delayMs}ms...`);
+        await sleep(delayMs);
+      }
+    }
+  }
+  throw lastErr;
+}
+
 export function getDatabase(): ReturnType<typeof drizzle> {
   if (dbInstance) return dbInstance;
 
@@ -38,13 +68,17 @@ export function getDatabase(): ReturnType<typeof drizzle> {
     ssl = { rejectUnauthorized: false };
   }
 
-  rawLog(`[DB] Creating postgres client (ssl=${Boolean(ssl)})`);
+  const connectTimeoutSec = parseInt(process.env.PG_CONNECT_TIMEOUT || '', 10) || 15;
+  const maxRetries = parseInt(process.env.PG_CONNECT_RETRIES || '', 10) || 3;
+  const retryDelayMs = parseInt(process.env.PG_CONNECT_RETRY_DELAY_MS || '', 10) || 1000;
+
+  rawLog(`[DB] Creating postgres client (ssl=${Boolean(ssl)}, connect_timeout=${connectTimeoutSec}s, retries=${maxRetries})`);
   const initStart = Date.now();
 
   const sql = postgres(databaseUrl, {
     max: 1,
     idle_timeout: 30,
-    connect_timeout: 5,
+    connect_timeout: connectTimeoutSec,
     ssl,
     prepare: false,
     connection: {
@@ -85,7 +119,7 @@ export function getDatabase(): ReturnType<typeof drizzle> {
   logger.log('Database drizzle instance created');
   rawLog('[DB] drizzle instance created, verifying connection...');
 
-  initPromise = sql`SELECT 1`
+  initPromise = verifyWithRetry(sql, maxRetries, retryDelayMs)
     .then(() => {
       const elapsed = Date.now() - initStart;
       logger.log(`Database connection verified in ${elapsed}ms (SELECT 1 OK)`);

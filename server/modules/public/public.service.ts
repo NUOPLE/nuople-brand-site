@@ -4,7 +4,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { DRIZZLE_DATABASE } from '../../database/connection';
 
-const DB_TIMEOUT_MS = 8000;
+const DB_TIMEOUT_MS = 15000;
 const logger = new Logger('PublicService');
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);

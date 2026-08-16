@@ -33,21 +33,22 @@ console.log(
     process.env.DATABASE_URL ? 'is set' : 'NOT SET'
   }`,
 );
-console.log(
-  `[VercelHandler] DATABASE_URL prefix: ${
-    process.env.DATABASE_URL
-      ? process.env.DATABASE_URL.split('@')[1]?.split('/')[0] || 'unknown host'
-      : 'n/a'
-  }`,
-);
 
 let cachedApp = null;
-let initError = null;
+let initPromise = null;
 
 async function createApp() {
   try {
     console.log('[VercelHandler] Creating Express app...');
     const expressApp = express();
+
+    expressApp.get('/api/health', (req, res) => {
+      res.status(200).json({
+        status: 'ok',
+        timestamp: Date.now(),
+        dbReady: cachedApp ? 'booted' : 'booting',
+      });
+    });
 
     expressApp.use((req, res, next) => {
       const start = Date.now();
@@ -135,7 +136,8 @@ async function createApp() {
         console.error(`[VercelHandler] Cause: [unserializable]`);
       }
     }
-    initError = err;
+    cachedApp = null;
+    initPromise = null;
     throw err;
   }
 }
@@ -143,31 +145,40 @@ async function createApp() {
 module.exports = async function handler(req, res) {
   console.log(`[VercelHandler] Request: ${req.method} ${req.url}`);
 
-  if (initError) {
-    console.error(
-      '[VercelHandler] App init failed earlier, returning 500 immediately',
-    );
-    return res.status(500).json({
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: '服务启动失败',
-        details: initError.message,
-        timestamp: Date.now(),
-      },
+  if (req.method === 'GET' && req.url.startsWith('/api/health')) {
+    return res.status(200).json({
+      status: 'ok',
+      timestamp: Date.now(),
+      dbReady: cachedApp ? 'ready' : initPromise ? 'booting' : 'idle',
     });
   }
 
   if (!cachedApp) {
-    console.log('[VercelHandler] Cold start: initializing app...');
+    if (!initPromise) {
+      console.log('[VercelHandler] Cold start: initializing app...');
+      initPromise = createApp()
+        .then((app) => {
+          cachedApp = app;
+          console.log('[VercelHandler] App initialized successfully');
+          return app;
+        })
+        .catch((err) => {
+          console.error('[VercelHandler] App initialization failed');
+          console.error(`[VercelHandler] Will retry on next request`);
+          initPromise = null;
+          throw err;
+        });
+    } else {
+      console.log('[VercelHandler] Init already in progress, waiting...');
+    }
+
     try {
-      cachedApp = await createApp();
-      console.log('[VercelHandler] App initialized, handling request');
+      await initPromise;
     } catch (err) {
-      console.error('[VercelHandler] App initialization failed');
       return res.status(500).json({
         error: {
-          code: 'INTERNAL_ERROR',
-          message: '服务启动失败',
+          code: 'INIT_FAILED',
+          message: '服务启动失败，将在下次请求时重试',
           details: err?.message,
           timestamp: Date.now(),
         },

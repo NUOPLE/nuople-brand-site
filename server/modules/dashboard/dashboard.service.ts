@@ -9,7 +9,7 @@ import type { DashboardStats, RecentMessage, CategoryStat } from '@shared/api.in
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 
-const STATS_TIMEOUT_MS = 8000;
+const STATS_TIMEOUT_MS = 15000;
 
 const logger = new Logger('DashboardService');
 

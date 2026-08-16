@@ -31,33 +31,25 @@ const rawError = globalThis.console.error.bind(globalThis.console);
               `Database connection failed: ${msg}`,
               'DatabaseModule',
             );
+            rawError(`[DatabaseModule] DB connection FAILED: ${msg}`);
             throw new Error(`Database connection failed: ${msg}`);
           }
         }
 
-        rawLog('[DatabaseModule] Running auto-migrations...');
-        try {
-          await runMigrations(db);
-          rawLog('[DatabaseModule] Auto-migrations done');
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          rawError(`[DatabaseModule] Migration FAILED: ${msg}`);
-          Logger.error(`Migration failed: ${msg}`, 'DatabaseModule');
-          throw new Error(`Database migration failed: ${msg}`);
-        }
-
-        rawLog('[DatabaseModule] Seeding default admin (if needed)...');
-        try {
-          await ensureDefaultAdmin(db);
-          rawLog('[DatabaseModule] Default admin seed complete');
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          rawError(`[DatabaseModule] Admin seed FAILED (non-fatal): ${msg}`);
-          Logger.error(
-            `Failed to seed default admin: ${msg}`,
-            'DatabaseModule',
-          );
-        }
+        rawLog('[DatabaseModule] Starting background auto-migrations...');
+        runMigrations(db)
+          .then(() => {
+            rawLog('[DatabaseModule] Auto-migrations done');
+            return ensureDefaultAdmin(db);
+          })
+          .then(() => {
+            rawLog('[DatabaseModule] Default admin seed complete');
+          })
+          .catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[DatabaseModule] Background migration/seed FAILED: ${msg}`);
+            Logger.error(`Background migration/seed failed: ${msg}`, 'DatabaseModule');
+          });
 
         return db;
       },
