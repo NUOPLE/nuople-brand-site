@@ -16,7 +16,7 @@ import {
 } from '../../common/utils/password';
 import type { Admin, LoginRequest } from '@shared/api.interface';
 
-const DB_TIMEOUT_MS = 8000;
+const DB_TIMEOUT_MS = 15000;
 const DEFAULT_ADMIN_USERNAME = 'admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin123';
 const logger = new Logger('AuthService');

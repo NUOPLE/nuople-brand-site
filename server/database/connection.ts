@@ -90,6 +90,18 @@ export function getDatabase(): ReturnType<typeof drizzle> {
     onparameter: (status) => {
       rawLog(`[DB] PARAMETER STATUS: ${JSON.stringify(status)}`);
     },
+    debug: (conn, query, params, types) => {
+      const q = typeof query === 'string' ? query : (query as { string?: string }).string || String(query);
+      const preview = q.length > 200 ? q.slice(0, 200) + '...' : q;
+      const paramsPreview = params && params.length > 0
+        ? ` params=[${params.map((p: unknown) => {
+          if (p == null) return String(p);
+          const s = typeof p === 'string' ? p : JSON.stringify(p);
+          return s.length > 80 ? s.slice(0, 80) + '...' : s;
+        }).join(', ')}]`
+        : '';
+      rawLog(`[DB] query conn=${conn} ${preview}${paramsPreview}`);
+    },
   });
 
   const sqlAny = sql as unknown as {

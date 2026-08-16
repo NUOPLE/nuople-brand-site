@@ -7,7 +7,9 @@ import {
   Param,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
@@ -80,22 +82,27 @@ export class PublicController {
 
   @Post('messages')
   async submitMessage(
+    @Req() req: Request,
     @Body() body: PublicMessageSubmitRequest,
   ): Promise<PublicMessageSubmitResponse> {
     rawLog(
-      `[PublicController] POST /api/public/messages: name="${body?.name}" email="${body?.email}" content_len=${body?.content?.length ?? 0}`,
+      `[PublicController] POST /api/public/messages rawBody=${JSON.stringify(req.body)} name="${body?.name}" email="${body?.email}" content_len=${body?.content?.length ?? 0}`,
     );
-    if (!body.name?.trim()) {
+    if (!body?.name?.trim()) {
+      rawError(`[PublicController] Validation FAILED: name is empty, body keys=${Object.keys(body || {})}`);
       throw new BadRequestException('请输入姓名');
     }
-    if (!body.email?.trim()) {
+    if (!body?.email?.trim()) {
+      rawError(`[PublicController] Validation FAILED: email is empty`);
       throw new BadRequestException('请输入邮箱');
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(body.email)) {
+      rawError(`[PublicController] Validation FAILED: invalid email format "${body.email}"`);
       throw new BadRequestException('邮箱格式不正确');
     }
-    if (!body.content?.trim()) {
+    if (!body?.content?.trim()) {
+      rawError(`[PublicController] Validation FAILED: content is empty`);
       throw new BadRequestException('请输入留言内容');
     }
     try {

@@ -23,8 +23,10 @@ const rawError = globalThis.console.error.bind(globalThis.console);
           $initPromise?: Promise<void>;
         }).$initPromise;
         if (initPromise) {
+          rawLog('[DatabaseModule] Waiting for DB connection init...');
           try {
             await initPromise;
+            rawLog('[DatabaseModule] DB connection verified, provider ready');
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             Logger.error(
@@ -36,19 +38,24 @@ const rawError = globalThis.console.error.bind(globalThis.console);
           }
         }
 
-        rawLog('[DatabaseModule] Starting background auto-migrations...');
+        rawLog('[DatabaseModule] Starting background auto-migrations (fire-and-forget)...');
+        let migrationDone = false;
         runMigrations(db)
           .then(() => {
-            rawLog('[DatabaseModule] Auto-migrations done');
+            migrationDone = true;
+            rawLog('[DatabaseModule] Background auto-migrations DONE');
             return ensureDefaultAdmin(db);
           })
           .then(() => {
-            rawLog('[DatabaseModule] Default admin seed complete');
+            rawLog('[DatabaseModule] Background default admin seed DONE');
           })
           .catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
             rawError(`[DatabaseModule] Background migration/seed FAILED: ${msg}`);
             Logger.error(`Background migration/seed failed: ${msg}`, 'DatabaseModule');
+            if (err instanceof Error && err.stack) {
+              rawError(`[DatabaseModule] Stack: ${err.stack}`);
+            }
           });
 
         return db;
