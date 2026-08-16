@@ -1,0 +1,24 @@
+services:
+  - name: nuople-brand-site
+    type: web
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build:standalone
+    startCommand: node dist/server/standalone.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+    healthCheckPath: /api/public/works
+    autoDeploy: yes
+
+  - name: nuople-db
+    type: postgres
+    plan: starter
+    databaseName: nuople_brand
+    user: postgres

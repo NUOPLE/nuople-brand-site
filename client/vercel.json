@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "bash vercel-build.sh",
+  "installCommand": "bash vercel-install.sh",
+  "outputDirectory": "dist/client",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/[...slug]" },
+    {
+      "source": "/((?!api/|assets/|favicon/|favicon\\.ico|robots\\.txt|static/|.*\\.png$|.*\\.jpg$|.*\\.jpeg$|.*\\.svg$|.*\\.webp$|.*\\.gif$|.*\\.ico$).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

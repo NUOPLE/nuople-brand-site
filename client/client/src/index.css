@@ -1,0 +1,114 @@
+@import '@lark-apaas/client-toolkit/lib/index.css';
+@import "tw-animate-css";
+@import "./tailwind-theme.css";
+@import "./typography.css";
+
+@source "../../node_modules/streamdown/dist/*.js";
+@config "../../tailwind.config.ts";
+
+/* 隐藏妙搭/豆包水印 */
+[data-custom-element="doubao-watermark"],
+[data-custom-element="doubao-watermark-mobile"] {
+  display: none !important;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.8s ease-out;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* ===== 水印隐藏（增强版） ===== */
+/* 1. 精准匹配豆包/妙搭水印元素（桌面端 + 移动端） */
+[data-custom-element="doubao-watermark"],
+[data-custom-element="doubao-watermark-mobile"],
+[class*="doubao-watermark"],
+[id*="doubao-watermark"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* 2. 通配：所有 class 名包含 watermark 的元素 */
+[class*="watermark" i],
+[class*="water-mark" i],
+[id*="watermark" i],
+[id*="water-mark" i],
+[data-watermark],
+[data-water-mark] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 3. 通过文本属性匹配含「妙搭」「由妙搭」「妙搭建站」的元素 */
+[aria-label*="妙搭" i],
+[aria-label*="妙搭建站" i],
+[aria-label*="由妙搭" i],
+[title*="妙搭" i],
+[title*="妙搭建站" i],
+[title*="由妙搭" i],
+[data-text*="妙搭" i],
+[data-text*="妙搭建站" i],
+[data-text*="由妙搭" i],
+[data-content*="妙搭" i],
+[data-content*="妙搭建站" i],
+[data-content*="由妙搭" i],
+[data-label*="妙搭" i],
+[data-label*="妙搭建站" i],
+[data-label*="由妙搭" i],
+[alt*="妙搭" i],
+[alt*="妙搭建站" i],
+[alt*="由妙搭" i] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 4. 全局兜底：body 伪元素 & fixed 高 z-index 元素强制检查 */
+body::before,
+body::after {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  content: none !important;
+}
+
+/* 对所有 fixed 定位且 z-index 较高的元素做属性级兜底（含水印特征属性的一律隐藏） */
+[style*="position: fixed" i][class*="watermark" i],
+[style*="position:fixed" i][class*="watermark" i],
+[style*="position: fixed" i][aria-label*="妙搭" i],
+[style*="position:fixed" i][aria-label*="妙搭" i],
+[style*="position: fixed" i][data-text*="妙搭" i],
+[style*="position:fixed" i][data-text*="妙搭" i] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

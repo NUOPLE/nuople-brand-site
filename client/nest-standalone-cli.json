@@ -1,0 +1,9 @@
+{
+  "extends": "@nestjs/schematics",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "server",
+  "compilerOptions": {
+    "deleteOutDir": false,
+    "tsConfigPath": "tsconfig.server.json"
+  }
+}
