@@ -3,6 +3,7 @@ import type { Work, WorkListResponse, WorkCreateRequest, WorkUpdateRequest, IdRe
 export declare class WorkService {
     private readonly db;
     constructor(db: PostgresJsDatabase);
+    private get sql();
     getList(params: {
         page: number;
         pageSize: number;

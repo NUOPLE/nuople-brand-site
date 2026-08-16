@@ -14,6 +14,8 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PublicController = void 0;
 const common_1 = require("@nestjs/common");
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
 const public_service_1 = require("./public.service");
 let PublicController = class PublicController {
     publicService;
@@ -53,21 +55,38 @@ let PublicController = class PublicController {
     async getKeywordRules() {
         return this.publicService.getKeywordRules();
     }
-    async submitMessage(body) {
-        if (!body.name?.trim()) {
+    async submitMessage(req, body) {
+        rawLog(`[PublicController] POST /api/public/messages rawBody=${JSON.stringify(req.body)} name="${body?.name}" email="${body?.email}" content_len=${body?.content?.length ?? 0}`);
+        if (!body?.name?.trim()) {
+            rawError(`[PublicController] Validation FAILED: name is empty, body keys=${Object.keys(body || {})}`);
             throw new common_1.BadRequestException('请输入姓名');
         }
-        if (!body.email?.trim()) {
+        if (!body?.email?.trim()) {
+            rawError(`[PublicController] Validation FAILED: email is empty`);
             throw new common_1.BadRequestException('请输入邮箱');
         }
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(body.email)) {
+            rawError(`[PublicController] Validation FAILED: invalid email format "${body.email}"`);
             throw new common_1.BadRequestException('邮箱格式不正确');
         }
-        if (!body.content?.trim()) {
+        if (!body?.content?.trim()) {
+            rawError(`[PublicController] Validation FAILED: content is empty`);
             throw new common_1.BadRequestException('请输入留言内容');
         }
-        return this.publicService.submitMessage(body);
+        try {
+            const result = await this.publicService.submitMessage(body);
+            rawLog(`[PublicController] Message submitted successfully: id=${result.id}`);
+            return result;
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[PublicController] submitMessage FAILED: ${msg}`);
+            if (err instanceof Error && err.stack) {
+                rawError(`[PublicController] Stack: ${err.stack}`);
+            }
+            throw err;
+        }
     }
 };
 exports.PublicController = PublicController;
@@ -115,9 +134,10 @@ __decorate([
 ], PublicController.prototype, "getKeywordRules", null);
 __decorate([
     (0, common_1.Post)('messages'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], PublicController.prototype, "submitMessage", null);
 exports.PublicController = PublicController = __decorate([

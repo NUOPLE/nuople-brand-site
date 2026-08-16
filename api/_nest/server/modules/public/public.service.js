@@ -14,9 +14,29 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PublicService = void 0;
 const common_1 = require("@nestjs/common");
-const drizzle_orm_1 = require("drizzle-orm");
 const connection_1 = require("../../database/connection");
-const schema_1 = require("../../database/schema");
+const DB_TIMEOUT_MS = 15000;
+const logger = new common_1.Logger('PublicService');
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
+function withTimeout(promise, ms, label) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            const err = new Error(`DB operation timed out after ${ms}ms: ${label}`);
+            rawError(`[PublicService] TIMEOUT: ${label} after ${ms}ms`);
+            reject(err);
+        }, ms);
+        promise
+            .then((value) => {
+            clearTimeout(timer);
+            resolve(value);
+        })
+            .catch((err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+    });
+}
 const DEFAULT_SETTINGS = {
     siteTitle: 'NUOPLE BRAND & ART',
     companyName: '诺品牌设计工作室',
@@ -59,61 +79,95 @@ let PublicService = class PublicService {
     constructor(db) {
         this.db = db;
     }
+    get rawSql() {
+        return this.db.$client;
+    }
     async getFeaturedWorks(limit = 5) {
-        const items = await this.db
-            .select({
-            id: schema_1.work.id,
-            title: schema_1.work.title,
-            category: schema_1.work.category,
-            client: schema_1.work.client,
-            year: schema_1.work.year,
-            description: schema_1.work.description,
-            coverImage: schema_1.work.coverImage,
-            tags: schema_1.work.tags,
-        })
-            .from(schema_1.work)
-            .orderBy((0, drizzle_orm_1.desc)(schema_1.work.createdAt))
-            .limit(limit);
-        return {
-            items: items.map((row) => ({
+        const t0 = Date.now();
+        rawLog(`[Public] getFeaturedWorks STEP1 enter limit=${limit}`);
+        try {
+            const sql = this.rawSql;
+            rawLog('[Public] getFeaturedWorks STEP2 before SQL');
+            const rows = await withTimeout(sql `
+          SELECT id, title, category, client, year, description, cover_image, tags
+          FROM work
+          ORDER BY _created_at DESC
+          LIMIT ${limit}
+        `, DB_TIMEOUT_MS, 'get-featured-works');
+            rawLog(`[Public] getFeaturedWorks STEP3 after SQL: ${rows.length} rows`);
+            rawLog(`[Public] getFeaturedWorks done: ${rows.length} items in ${Date.now() - t0}ms`);
+            return {
+                items: rows.map((row) => ({
+                    id: row.id,
+                    title: row.title,
+                    category: row.category,
+                    client: row.client,
+                    year: row.year,
+                    description: row.description,
+                    coverImage: row.cover_image,
+                    tags: row.tags,
+                })),
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[Public] getFeaturedWorks FAILED: ${msg}`);
+            logger.error(`getFeaturedWorks failed: ${msg}`);
+            return { items: [] };
+        }
+    }
+    async getWorkList(params) {
+        const { page, pageSize, category } = params;
+        const t0 = Date.now();
+        rawLog(`[Public] getWorkList STEP1 enter page=${page} pageSize=${pageSize} category=${category || 'all'}`);
+        let total = 0;
+        let items = [];
+        try {
+            const sql = this.rawSql;
+            const offset = (page - 1) * pageSize;
+            rawLog('[Public] getWorkList STEP2 before SQL (count + list parallel)');
+            const [countRows, workRows] = await withTimeout(category
+                ? Promise.all([
+                    sql `SELECT COUNT(*)::bigint AS count FROM work WHERE category = ${category}`,
+                    sql `
+                SELECT id, title, category, client, year, description, cover_image, tags
+                FROM work
+                WHERE category = ${category}
+                ORDER BY _created_at DESC
+                LIMIT ${pageSize}
+                OFFSET ${offset}
+              `,
+                ])
+                : Promise.all([
+                    sql `SELECT COUNT(*)::bigint AS count FROM work`,
+                    sql `
+                SELECT id, title, category, client, year, description, cover_image, tags
+                FROM work
+                ORDER BY _created_at DESC
+                LIMIT ${pageSize}
+                OFFSET ${offset}
+              `,
+                ]), DB_TIMEOUT_MS, `get-work-list-${page}-${pageSize}-${category || 'all'}`);
+            rawLog(`[Public] getWorkList STEP3 after SQL: ${workRows.length} rows, count=${countRows[0]?.count ?? 0}`);
+            total = Number(countRows[0]?.count ?? 0);
+            items = workRows.map((row) => ({
                 id: row.id,
                 title: row.title,
                 category: row.category,
                 client: row.client,
                 year: row.year,
                 description: row.description,
-                coverImage: row.coverImage,
+                coverImage: row.cover_image,
                 tags: row.tags,
-            })),
-        };
-    }
-    async getWorkList(params) {
-        const { page, pageSize, category } = params;
-        const conditions = [];
-        if (category) {
-            conditions.push((0, drizzle_orm_1.eq)(schema_1.work.category, category));
+            }));
         }
-        const where = conditions.length > 0 ? (0, drizzle_orm_1.and)(...conditions) : undefined;
-        const [countResult, items] = await Promise.all([
-            this.db.select({ count: (0, drizzle_orm_1.count)() }).from(schema_1.work).where(where),
-            this.db
-                .select({
-                id: schema_1.work.id,
-                title: schema_1.work.title,
-                category: schema_1.work.category,
-                client: schema_1.work.client,
-                year: schema_1.work.year,
-                description: schema_1.work.description,
-                coverImage: schema_1.work.coverImage,
-                tags: schema_1.work.tags,
-            })
-                .from(schema_1.work)
-                .where(where)
-                .orderBy((0, drizzle_orm_1.desc)(schema_1.work.createdAt))
-                .limit(pageSize)
-                .offset((page - 1) * pageSize),
-        ]);
-        const total = Number(countResult[0]?.count ?? 0);
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[Public] getWorkList FAILED: ${msg}`);
+            logger.error(`getWorkList failed: ${msg}`);
+            return { items: [], total: 0 };
+        }
+        rawLog(`[Public] getWorkList done: ${items.length} items, total=${total} in ${Date.now() - t0}ms`);
         return {
             items: items.map((row) => ({
                 id: row.id,
@@ -129,55 +183,69 @@ let PublicService = class PublicService {
         };
     }
     async getWorkById(id) {
-        const rows = await this.db.select().from(schema_1.work).where((0, drizzle_orm_1.eq)(schema_1.work.id, id)).limit(1);
+        rawLog(`[Public] getWorkById STEP1 enter id=${id}`);
+        const sql = this.rawSql;
+        rawLog('[Public] getWorkById STEP2 before SQL');
+        const rows = await sql `
+      SELECT id, title, category, client, industry, design_type, year, description,
+             tags, content, cover_image, hero_image, gallery, _created_at
+      FROM work
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+        rawLog(`[Public] getWorkById STEP3 after SQL: ${rows.length} rows`);
         if (rows.length === 0)
             return null;
         const row = rows[0];
+        let gallery = [];
+        try {
+            gallery = JSON.parse(row.gallery);
+        }
+        catch {
+            gallery = [];
+        }
         return {
             id: row.id,
             title: row.title,
             category: row.category,
             client: row.client,
             industry: row.industry,
-            designType: row.designType,
+            designType: row.design_type,
             year: row.year,
             description: row.description,
             tags: row.tags,
             content: row.content,
-            coverImage: row.coverImage,
-            heroImage: row.heroImage,
-            gallery: row.gallery,
-            createdAt: row.createdAt.toISOString(),
+            coverImage: row.cover_image,
+            heroImage: row.hero_image,
+            gallery,
+            createdAt: new Date(row._created_at).toISOString(),
         };
     }
     async getNextWork(id) {
-        const current = await this.db
-            .select({ createdAt: schema_1.work.createdAt })
-            .from(schema_1.work)
-            .where((0, drizzle_orm_1.eq)(schema_1.work.id, id))
-            .limit(1);
-        if (current.length === 0)
+        rawLog(`[Public] getNextWork STEP1 enter id=${id}`);
+        const sql = this.rawSql;
+        rawLog('[Public] getNextWork STEP2 before SQL (get current)');
+        const currentRows = await sql `
+      SELECT _created_at
+      FROM work
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+        if (currentRows.length === 0)
             return null;
-        const rows = await this.db
-            .select({
-            id: schema_1.work.id,
-            title: schema_1.work.title,
-            category: schema_1.work.category,
-            client: schema_1.work.client,
-            year: schema_1.work.year,
-            description: schema_1.work.description,
-            coverImage: schema_1.work.coverImage,
-            tags: schema_1.work.tags,
-        })
-            .from(schema_1.work)
-            .where((0, drizzle_orm_1.asc)(schema_1.work.createdAt))
-            .orderBy((0, drizzle_orm_1.asc)(schema_1.work.createdAt))
-            .limit(1);
+        const currentCreatedAt = currentRows[0]._created_at;
+        rawLog('[Public] getNextWork STEP3 before SQL (find next)');
+        const rows = await sql `
+      SELECT id, title, category, client, year, description, cover_image, tags
+      FROM work
+      WHERE _created_at < ${currentCreatedAt}
+      ORDER BY _created_at DESC
+      LIMIT 1
+    `;
+        rawLog(`[Public] getNextWork STEP4 after SQL: ${rows.length} rows`);
         if (rows.length === 0)
             return null;
         const row = rows[0];
-        if (row.id === id)
-            return null;
         return {
             id: row.id,
             title: row.title,
@@ -185,68 +253,129 @@ let PublicService = class PublicService {
             client: row.client,
             year: row.year,
             description: row.description,
-            coverImage: row.coverImage,
+            coverImage: row.cover_image,
             tags: row.tags,
         };
     }
     async getSiteSettings() {
-        const rows = await this.db.select().from(schema_1.siteSetting);
-        const map = new Map();
-        for (const row of rows) {
-            map.set(row.settingKey, row.settingValue);
+        const t0 = Date.now();
+        rawLog('[Public] getSiteSettings STEP1 enter');
+        try {
+            const sql = this.rawSql;
+            rawLog('[Public] getSiteSettings STEP2 before SQL');
+            const rows = await withTimeout(sql `SELECT setting_key, setting_value FROM site_setting`, DB_TIMEOUT_MS, 'get-site-settings');
+            rawLog(`[Public] getSiteSettings STEP3 after SQL: ${rows.length} rows`);
+            rawLog(`[Public] getSiteSettings done: ${rows.length} rows in ${Date.now() - t0}ms`);
+            const map = new Map();
+            for (const row of rows) {
+                map.set(row.setting_key, row.setting_value);
+            }
+            const parseJson = (key, fallback) => {
+                const val = map.get(key);
+                if (!val)
+                    return fallback;
+                try {
+                    return JSON.parse(val);
+                }
+                catch {
+                    return fallback;
+                }
+            };
+            return {
+                siteTitle: map.get('site_title') || DEFAULT_SETTINGS.siteTitle,
+                companyName: map.get('company_name') || DEFAULT_SETTINGS.companyName,
+                logoImage: map.get('logo_image') || DEFAULT_SETTINGS.logoImage,
+                heroSlogan: map.get('hero_slogan') || DEFAULT_SETTINGS.heroSlogan,
+                heroSubtitle: map.get('hero_subtitle') || DEFAULT_SETTINGS.heroSubtitle,
+                aboutUs: map.get('about_us') || DEFAULT_SETTINGS.aboutUs,
+                services: parseJson('services', DEFAULT_SETTINGS.services),
+                designProcess: parseJson('design_process', DEFAULT_SETTINGS.designProcess),
+                contact: parseJson('contact', DEFAULT_SETTINGS.contact),
+                footer: parseJson('footer', DEFAULT_SETTINGS.footer),
+            };
         }
-        const parseJson = (key, fallback) => {
-            const val = map.get(key);
-            if (!val)
-                return fallback;
-            try {
-                return JSON.parse(val);
-            }
-            catch {
-                return fallback;
-            }
-        };
-        return {
-            siteTitle: map.get('site_title') || DEFAULT_SETTINGS.siteTitle,
-            companyName: map.get('company_name') || DEFAULT_SETTINGS.companyName,
-            logoImage: map.get('logo_image') || DEFAULT_SETTINGS.logoImage,
-            heroSlogan: map.get('hero_slogan') || DEFAULT_SETTINGS.heroSlogan,
-            heroSubtitle: map.get('hero_subtitle') || DEFAULT_SETTINGS.heroSubtitle,
-            aboutUs: map.get('about_us') || DEFAULT_SETTINGS.aboutUs,
-            services: parseJson('services', DEFAULT_SETTINGS.services),
-            designProcess: parseJson('design_process', DEFAULT_SETTINGS.designProcess),
-            contact: parseJson('contact', DEFAULT_SETTINGS.contact),
-            footer: parseJson('footer', DEFAULT_SETTINGS.footer),
-        };
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[Public] getSiteSettings FAILED: ${msg}`);
+            logger.error(`getSiteSettings failed: ${msg}`);
+            return DEFAULT_SETTINGS;
+        }
     }
     async getKeywordRules() {
-        const rows = await this.db
-            .select({
-            id: schema_1.keywordRule.id,
-            keywords: schema_1.keywordRule.keywords,
-            replyContent: schema_1.keywordRule.replyContent,
-        })
-            .from(schema_1.keywordRule)
-            .orderBy((0, drizzle_orm_1.asc)(schema_1.keywordRule.sortOrder), (0, drizzle_orm_1.asc)(schema_1.keywordRule.createdAt));
-        return {
-            items: rows.map((row) => ({
-                id: row.id,
-                keywords: row.keywords,
-                replyContent: row.replyContent,
-            })),
-        };
+        rawLog('[Public] getKeywordRules STEP1 enter');
+        try {
+            const sql = this.rawSql;
+            rawLog('[Public] getKeywordRules STEP2 before SQL');
+            const rows = await withTimeout(sql `
+          SELECT id, keywords, reply_content
+          FROM keyword_rule
+          ORDER BY sort_order ASC, _created_at ASC
+        `, DB_TIMEOUT_MS, 'get-keyword-rules');
+            rawLog(`[Public] getKeywordRules STEP3 after SQL: ${rows.length} rows`);
+            rawLog(`[Public] getKeywordRules done: ${rows.length} rows`);
+            return {
+                items: rows.map((row) => ({
+                    id: row.id,
+                    keywords: row.keywords,
+                    replyContent: row.reply_content,
+                })),
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[Public] getKeywordRules FAILED: ${msg}`);
+            logger.error(`getKeywordRules failed: ${msg}`);
+            return { items: [] };
+        }
     }
     async submitMessage(dto) {
-        const result = await this.db
-            .insert(schema_1.message)
-            .values({
-            name: dto.name,
-            email: dto.email,
-            content: dto.content,
-            isRead: false,
-        })
-            .returning({ id: schema_1.message.id });
-        return { success: true, id: result[0].id };
+        rawLog(`[Public] submitMessage STEP1 enter name=${dto.name} email=${dto.email} content_len=${dto.content.length}`);
+        try {
+            const rawSql = this.db.$client;
+            if (!rawSql) {
+                rawError('[Public] submitMessage FAILED: raw sql client ($client) not available');
+                throw new common_1.BadRequestException('留言提交失败，请稍后重试');
+            }
+            rawLog('[Public] submitMessage STEP2 got rawSqlClient via drizzle $client, executing INSERT...');
+            const result = await withTimeout((async () => {
+                rawLog('[Public] submitMessage STEP3 inside withTimeout, sending SQL...');
+                rawLog(`[Public] submitMessage SQL_PREVIEW: INSERT INTO message (name, email, content, is_read) VALUES ('${dto.name}', '${dto.email}', '${dto.content.slice(0, 30)}...', FALSE) RETURNING id`);
+                const rows = await rawSql `
+            INSERT INTO message (name, email, content, is_read)
+            VALUES (${dto.name}, ${dto.email}, ${dto.content}, FALSE)
+            RETURNING id, name, email, content, is_read, _created_at
+          `;
+                rawLog(`[Public] submitMessage STEP4 INSERT returned, rows=${rows.length}`);
+                if (rows.length > 0) {
+                    const r = rows[0];
+                    rawLog(`[Public] submitMessage STEP4 detail: id=${r.id}, name=${r.name}, _created_at=${r._created_at}`);
+                }
+                return rows;
+            })(), DB_TIMEOUT_MS, 'submit-message-raw');
+            rawLog(`[Public] submitMessage STEP5 done: id=${result[0].id}`);
+            return { success: true, id: result[0].id };
+        }
+        catch (err) {
+            rawError('[Public] submitMessage CATCH err=');
+            rawError(err);
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[Public] submitMessage FAILED: ${msg}`);
+            if (err instanceof Error && err.stack) {
+                rawError(`[Public] submitMessage Stack: ${err.stack}`);
+            }
+            let current = err;
+            for (let depth = 0; depth < 4 && current && typeof current === 'object'; depth += 1) {
+                const { code, severity, detail, schema, table, column, constraint, cause } = current;
+                if (code !== undefined ||
+                    detail !== undefined ||
+                    table !== undefined) {
+                    rawError(`[Public] submitMessage PostgresError depth=${depth}: code=${code}, severity=${severity}, detail=${detail}, schema=${schema}, table=${table}, column=${column}, constraint=${constraint}`);
+                }
+                current = cause;
+            }
+            logger.error(`submitMessage failed: ${msg}`);
+            throw new common_1.BadRequestException('留言提交失败，请稍后重试');
+        }
     }
 };
 exports.PublicService = PublicService;

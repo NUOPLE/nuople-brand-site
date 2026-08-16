@@ -14,115 +14,190 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MessageService = void 0;
 const common_1 = require("@nestjs/common");
-const drizzle_orm_1 = require("drizzle-orm");
 const connection_1 = require("../../database/connection");
-const schema_1 = require("../../database/schema");
+const DB_TIMEOUT_MS = 5000;
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
+function withTimeout(promise, ms, label) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            rawError(`[MessageService] TIMEOUT: ${label} after ${ms}ms`);
+            reject(new Error(`DB operation timed out after ${ms}ms: ${label}`));
+        }, ms);
+        promise
+            .then((value) => {
+            clearTimeout(timer);
+            resolve(value);
+        })
+            .catch((err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+    });
+}
 let MessageService = class MessageService {
     db;
     constructor(db) {
         this.db = db;
     }
+    get sql() {
+        return this.db.$client;
+    }
     async getList(page, pageSize, status) {
-        const whereConditions = [];
-        if (status === 'unread') {
-            whereConditions.push((0, drizzle_orm_1.eq)(schema_1.message.isRead, false));
+        rawLog(`[MessageService.getList] STEP1 enter page=${page} pageSize=${pageSize} status=${status}`);
+        const whereSql = status === 'unread'
+            ? this.sql `WHERE is_read = FALSE`
+            : status === 'read'
+                ? this.sql `WHERE is_read = TRUE`
+                : this.sql ``;
+        const offset = (page - 1) * pageSize;
+        rawLog(`[MessageService.getList] STEP2 before SQL`);
+        const start = Date.now();
+        try {
+            const [itemsResult, totalResult, unreadResult] = await withTimeout(Promise.all([
+                this.sql `
+            SELECT id, name, email, content, _created_at, is_read, reply_content IS NOT NULL AS has_reply
+            FROM message
+            ${whereSql}
+            ORDER BY _created_at DESC
+            LIMIT ${pageSize} OFFSET ${offset}
+          `,
+                this.sql `
+            SELECT COUNT(*)::bigint AS count
+            FROM message
+            ${whereSql}
+          `,
+                this.sql `
+            SELECT COUNT(*)::bigint AS count
+            FROM message
+            WHERE is_read = FALSE
+          `,
+            ]), DB_TIMEOUT_MS, 'message-list');
+            const elapsed = Date.now() - start;
+            rawLog(`[MessageService.getList] STEP3 done in ${elapsed}ms items=${itemsResult.length} total=${totalResult[0]?.count} unread=${unreadResult[0]?.count}`);
+            const items = itemsResult.map((row) => ({
+                id: row.id,
+                name: row.name,
+                email: row.email,
+                content: row.content,
+                createdAt: new Date(row._created_at).toISOString(),
+                isRead: row.is_read,
+                hasReply: row.has_reply,
+            }));
+            const total = Number(totalResult[0]?.count ?? 0);
+            const totalUnread = Number(unreadResult[0]?.count ?? 0);
+            return { items, total, totalUnread };
         }
-        else if (status === 'read') {
-            whereConditions.push((0, drizzle_orm_1.eq)(schema_1.message.isRead, true));
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[MessageService.getList] FAILED after ${Date.now() - start}ms: ${msg}`);
+            return { items: [], total: 0, totalUnread: 0 };
         }
-        const whereClause = whereConditions.length > 0 ? (0, drizzle_orm_1.and)(...whereConditions) : undefined;
-        const [itemsResult, totalResult, unreadResult] = await Promise.all([
-            this.db
-                .select({
-                id: schema_1.message.id,
-                name: schema_1.message.name,
-                email: schema_1.message.email,
-                content: schema_1.message.content,
-                createdAt: schema_1.message.createdAt,
-                isRead: schema_1.message.isRead,
-                hasReply: (0, drizzle_orm_1.sql) `${schema_1.message.replyContent} IS NOT NULL`,
-            })
-                .from(schema_1.message)
-                .where(whereClause)
-                .orderBy((0, drizzle_orm_1.desc)(schema_1.message.createdAt))
-                .limit(pageSize)
-                .offset((page - 1) * pageSize),
-            this.db
-                .select({ count: (0, drizzle_orm_1.count)() })
-                .from(schema_1.message)
-                .where(whereClause),
-            this.db
-                .select({ count: (0, drizzle_orm_1.count)() })
-                .from(schema_1.message)
-                .where((0, drizzle_orm_1.eq)(schema_1.message.isRead, false)),
-        ]);
-        const items = itemsResult.map((row) => ({
-            id: row.id,
-            name: row.name,
-            email: row.email,
-            content: row.content,
-            createdAt: row.createdAt.toISOString(),
-            isRead: row.isRead,
-            hasReply: row.hasReply,
-        }));
-        const total = Number(totalResult[0]?.count ?? 0);
-        const totalUnread = Number(unreadResult[0]?.count ?? 0);
-        return { items, total, totalUnread };
     }
     async getById(id) {
-        const rows = await this.db
-            .select()
-            .from(schema_1.message)
-            .where((0, drizzle_orm_1.eq)(schema_1.message.id, id))
-            .limit(1);
-        if (rows.length === 0) {
-            throw new common_1.NotFoundException('留言不存在');
+        rawLog(`[MessageService.getById] STEP1 enter id=${id}`);
+        rawLog(`[MessageService.getById] STEP2 before SQL`);
+        try {
+            const rows = await withTimeout(this.sql `
+        SELECT id, name, email, content, is_read, reply_content, replied_at, _created_at
+        FROM message
+        WHERE id = ${id}
+        LIMIT 1
+      `, DB_TIMEOUT_MS, 'message-get-by-id');
+            rawLog(`[MessageService.getById] STEP3 SQL returned rows=${rows.length}`);
+            if (rows.length === 0) {
+                throw new common_1.NotFoundException('留言不存在');
+            }
+            const row = rows[0];
+            return {
+                id: row.id,
+                name: row.name,
+                email: row.email,
+                content: row.content,
+                createdAt: new Date(row._created_at).toISOString(),
+                isRead: row.is_read,
+                replyContent: row.reply_content ?? null,
+                repliedAt: row.replied_at ? new Date(row.replied_at).toISOString() : null,
+            };
         }
-        const row = rows[0];
-        return {
-            id: row.id,
-            name: row.name,
-            email: row.email,
-            content: row.content,
-            createdAt: row.createdAt.toISOString(),
-            isRead: row.isRead,
-            replyContent: row.replyContent,
-            repliedAt: row.repliedAt ? row.repliedAt.toISOString() : null,
-        };
+        catch (err) {
+            if (err instanceof common_1.NotFoundException)
+                throw err;
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[MessageService.getById] FAILED: ${msg}`);
+            throw err;
+        }
     }
     async updateReadStatus(id, isRead) {
-        const updated = await this.db
-            .update(schema_1.message)
-            .set({ isRead, updatedAt: (0, drizzle_orm_1.sql) `CURRENT_TIMESTAMP` })
-            .where((0, drizzle_orm_1.eq)(schema_1.message.id, id))
-            .returning({ id: schema_1.message.id });
-        if (updated.length === 0) {
-            throw new common_1.NotFoundException('留言不存在');
+        rawLog(`[MessageService.updateReadStatus] STEP1 enter id=${id} isRead=${isRead}`);
+        rawLog(`[MessageService.updateReadStatus] STEP2 before SQL`);
+        try {
+            const updated = await withTimeout(this.sql `
+        UPDATE message
+        SET is_read = ${isRead}, _updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${id}
+        RETURNING id
+      `, DB_TIMEOUT_MS, 'message-update-read');
+            rawLog(`[MessageService.updateReadStatus] STEP3 SQL returned rows=${updated.length}`);
+            if (updated.length === 0) {
+                throw new common_1.NotFoundException('留言不存在');
+            }
+        }
+        catch (err) {
+            if (err instanceof common_1.NotFoundException)
+                throw err;
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[MessageService.updateReadStatus] FAILED: ${msg}`);
+            throw err;
         }
     }
     async reply(id, replyContent) {
-        const updated = await this.db
-            .update(schema_1.message)
-            .set({
-            replyContent,
-            repliedAt: (0, drizzle_orm_1.sql) `CURRENT_TIMESTAMP`,
-            isRead: true,
-            updatedAt: (0, drizzle_orm_1.sql) `CURRENT_TIMESTAMP`,
-        })
-            .where((0, drizzle_orm_1.eq)(schema_1.message.id, id))
-            .returning({ repliedAt: schema_1.message.repliedAt });
-        if (updated.length === 0) {
-            throw new common_1.NotFoundException('留言不存在');
+        rawLog(`[MessageService.reply] STEP1 enter id=${id}`);
+        rawLog(`[MessageService.reply] STEP2 before SQL`);
+        try {
+            const updated = await withTimeout(this.sql `
+        UPDATE message
+        SET reply_content = ${replyContent},
+            replied_at = CURRENT_TIMESTAMP,
+            is_read = TRUE,
+            _updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${id}
+        RETURNING replied_at
+      `, DB_TIMEOUT_MS, 'message-reply');
+            rawLog(`[MessageService.reply] STEP3 SQL returned rows=${updated.length}`);
+            if (updated.length === 0) {
+                throw new common_1.NotFoundException('留言不存在');
+            }
+            return { repliedAt: new Date(updated[0].replied_at).toISOString() };
         }
-        return { repliedAt: updated[0].repliedAt.toISOString() };
+        catch (err) {
+            if (err instanceof common_1.NotFoundException)
+                throw err;
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[MessageService.reply] FAILED: ${msg}`);
+            throw err;
+        }
     }
     async delete(id) {
-        const deleted = await this.db
-            .delete(schema_1.message)
-            .where((0, drizzle_orm_1.eq)(schema_1.message.id, id))
-            .returning({ id: schema_1.message.id });
-        if (deleted.length === 0) {
-            throw new common_1.NotFoundException('留言不存在');
+        rawLog(`[MessageService.delete] STEP1 enter id=${id}`);
+        rawLog(`[MessageService.delete] STEP2 before SQL`);
+        try {
+            const deleted = await withTimeout(this.sql `
+        DELETE FROM message
+        WHERE id = ${id}
+        RETURNING id
+      `, DB_TIMEOUT_MS, 'message-delete');
+            rawLog(`[MessageService.delete] STEP3 SQL returned rows=${deleted.length}`);
+            if (deleted.length === 0) {
+                throw new common_1.NotFoundException('留言不存在');
+            }
+        }
+        catch (err) {
+            if (err instanceof common_1.NotFoundException)
+                throw err;
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[MessageService.delete] FAILED: ${msg}`);
+            throw err;
         }
     }
 };

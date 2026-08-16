@@ -1,3 +1,4 @@
+import type { Request } from 'express';
 import { PublicService } from './public.service';
 import type { PublicWorkListResponse, PublicWorkDetail, PublicSiteSettings, PublicKeywordRulesResponse, PublicMessageSubmitRequest, PublicMessageSubmitResponse, PublicFeaturedWorksResponse } from '@shared/api.interface';
 export declare class PublicController {
@@ -9,5 +10,5 @@ export declare class PublicController {
     getNextWork(id: string): Promise<PublicWorkDetail>;
     getSiteSettings(): Promise<PublicSiteSettings>;
     getKeywordRules(): Promise<PublicKeywordRulesResponse>;
-    submitMessage(body: PublicMessageSubmitRequest): Promise<PublicMessageSubmitResponse>;
+    submitMessage(req: Request, body: PublicMessageSubmitRequest): Promise<PublicMessageSubmitResponse>;
 }

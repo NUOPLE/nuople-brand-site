@@ -3,6 +3,7 @@ import type { Message, MessageListResponse, MessageStatusFilter } from '@shared/
 export declare class MessageService {
     private readonly db;
     constructor(db: PostgresJsDatabase);
+    private get sql();
     getList(page: number, pageSize: number, status: MessageStatusFilter): Promise<MessageListResponse>;
     getById(id: string): Promise<Message>;
     updateReadStatus(id: string, isRead: boolean): Promise<void>;

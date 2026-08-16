@@ -15,8 +15,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SiteSettingService = void 0;
 const common_1 = require("@nestjs/common");
 const connection_1 = require("../../database/connection");
-const drizzle_orm_1 = require("drizzle-orm");
-const schema_1 = require("../../database/schema");
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
 const SETTING_KEYS = {
     siteTitle: 'site_title',
     companyName: 'company_name',
@@ -38,14 +38,21 @@ let SiteSettingService = class SiteSettingService {
     constructor(db) {
         this.db = db;
     }
+    get sql() {
+        return this.db.$client;
+    }
     async getSettings() {
-        const rows = await this.db
-            .select({ settingKey: schema_1.siteSetting.settingKey, settingValue: schema_1.siteSetting.settingValue })
-            .from(schema_1.siteSetting)
-            .where((0, drizzle_orm_1.inArray)(schema_1.siteSetting.settingKey, ALL_KEYS));
+        rawLog('[SiteSettingService.getSettings] STEP1 enter');
+        rawLog('[SiteSettingService.getSettings] STEP2 before SQL');
+        const rows = await this.sql `
+      SELECT setting_key, setting_value
+      FROM site_setting
+      WHERE setting_key = ANY(${this.sql.array(ALL_KEYS)}::text[])
+    `;
+        rawLog(`[SiteSettingService.getSettings] STEP3 SQL returned rows=${rows.length}`);
         const map = new Map();
         for (const row of rows) {
-            map.set(row.settingKey, row.settingValue);
+            map.set(row.setting_key, row.setting_value);
         }
         const get = (key) => map.get(key) ?? '';
         let services = [];
@@ -97,28 +104,31 @@ let SiteSettingService = class SiteSettingService {
         };
     }
     async updateSettings(settings) {
+        rawLog('[SiteSettingService.updateSettings] STEP1 enter');
         const values = [
-            { settingKey: SETTING_KEYS.siteTitle, settingValue: settings.siteTitle },
-            { settingKey: SETTING_KEYS.companyName, settingValue: settings.companyName },
-            { settingKey: SETTING_KEYS.logoImage, settingValue: settings.logoImage },
-            { settingKey: SETTING_KEYS.heroSlogan, settingValue: settings.heroSlogan },
-            { settingKey: SETTING_KEYS.heroSubtitle, settingValue: settings.heroSubtitle },
-            { settingKey: SETTING_KEYS.aboutUs, settingValue: settings.aboutUs },
-            { settingKey: SETTING_KEYS.services, settingValue: JSON.stringify(settings.services) },
-            { settingKey: SETTING_KEYS.designProcess, settingValue: JSON.stringify(settings.designProcess) },
-            { settingKey: SETTING_KEYS.contactPhone, settingValue: settings.contact.phone },
-            { settingKey: SETTING_KEYS.contactEmail, settingValue: settings.contact.email },
-            { settingKey: SETTING_KEYS.contactAddress, settingValue: settings.contact.address },
-            { settingKey: SETTING_KEYS.footerCopyright, settingValue: settings.footer.copyright },
-            { settingKey: SETTING_KEYS.footerSocialLinks, settingValue: settings.footer.socialLinks },
+            { key: SETTING_KEYS.siteTitle, value: settings.siteTitle },
+            { key: SETTING_KEYS.companyName, value: settings.companyName },
+            { key: SETTING_KEYS.logoImage, value: settings.logoImage },
+            { key: SETTING_KEYS.heroSlogan, value: settings.heroSlogan },
+            { key: SETTING_KEYS.heroSubtitle, value: settings.heroSubtitle },
+            { key: SETTING_KEYS.aboutUs, value: settings.aboutUs },
+            { key: SETTING_KEYS.services, value: JSON.stringify(settings.services) },
+            { key: SETTING_KEYS.designProcess, value: JSON.stringify(settings.designProcess) },
+            { key: SETTING_KEYS.contactPhone, value: settings.contact.phone },
+            { key: SETTING_KEYS.contactEmail, value: settings.contact.email },
+            { key: SETTING_KEYS.contactAddress, value: settings.contact.address },
+            { key: SETTING_KEYS.footerCopyright, value: settings.footer.copyright },
+            { key: SETTING_KEYS.footerSocialLinks, value: settings.footer.socialLinks },
         ];
-        await this.db
-            .insert(schema_1.siteSetting)
-            .values(values)
-            .onConflictDoUpdate({
-            target: schema_1.siteSetting.settingKey,
-            set: { settingValue: (0, drizzle_orm_1.sql) `EXCLUDED.setting_value` },
-        });
+        rawLog(`[SiteSettingService.updateSettings] STEP2 before SQL (${values.length} keys)`);
+        const sql = this.sql;
+        const promises = values.map((v) => sql `
+        INSERT INTO site_setting (setting_key, setting_value)
+        VALUES (${v.key}, ${v.value})
+        ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, _updated_at = CURRENT_TIMESTAMP
+      `);
+        await Promise.all(promises);
+        rawLog('[SiteSettingService.updateSettings] STEP3 SQL completed');
         return { success: true };
     }
 };

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, X, Send } from 'lucide-react';
+import { MessageCircle, X, Send, UserCheck } from 'lucide-react';
 
 import { Button } from '@client/src/components/ui/button';
-import { getPublicKeywordRules } from '@client/src/api/public';
+import { getPublicKeywordRules, submitPublicMessage } from '@client/src/api/public';
 import type { PublicKeywordRule } from '@shared/api.interface';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 
@@ -19,6 +19,7 @@ const ChatWidget = () => {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [transferring, setTransferring] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -81,6 +82,59 @@ const ChatWidget = () => {
       setMessages((prev) => [...prev, botMsg]);
       setSending(false);
     }, 600);
+  };
+
+  const handleTransferToHuman = async () => {
+    const userMessages = messages.filter((m) => m.type === 'user');
+    if (userMessages.length === 0) {
+      const botMsg: ChatMessage = {
+        id: `b-${Date.now()}`,
+        type: 'bot',
+        content: '请先输入您的问题，再点击「转人工」，我们的工作人员会尽快回复您。',
+        time: new Date().toLocaleTimeString('zh-CN', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      };
+      setMessages((prev) => [...prev, botMsg]);
+      return;
+    }
+
+    if (transferring) return;
+    setTransferring(true);
+
+    try {
+      const content = userMessages.map((m, i) => `【用户消息${i + 1}】${m.content}`).join('\n');
+      await submitPublicMessage({
+        name: '访客',
+        email: 'chat@nuople.cn',
+        content,
+      });
+      const botMsg: ChatMessage = {
+        id: `b-${Date.now()}`,
+        type: 'bot',
+        content: '感谢您的留言，我们的工作人员会尽快回复您。',
+        time: new Date().toLocaleTimeString('zh-CN', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      };
+      setMessages((prev) => [...prev, botMsg]);
+    } catch (err) {
+      logger.error('transfer to human failed', String(err));
+      const botMsg: ChatMessage = {
+        id: `b-${Date.now()}`,
+        type: 'bot',
+        content: '留言提交失败，请稍后重试。',
+        time: new Date().toLocaleTimeString('zh-CN', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      };
+      setMessages((prev) => [...prev, botMsg]);
+    } finally {
+      setTransferring(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -146,6 +200,17 @@ const ChatWidget = () => {
               ))
             )}
             <div ref={messagesEndRef} />
+          </div>
+
+          <div className="px-3 py-2 border-t border-black/10 flex justify-center bg-gray-50">
+            <button
+              onClick={handleTransferToHuman}
+              disabled={transferring}
+              className="flex items-center gap-1.5 text-xs text-black/60 hover:text-black transition-colors disabled:opacity-50"
+            >
+              <UserCheck className="size-3.5" />
+              {transferring ? '提交中...' : '转人工客服'}
+            </button>
           </div>
 
           <div className="p-3 border-t border-black/10 flex items-center gap-2">

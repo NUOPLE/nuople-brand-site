@@ -16,13 +16,32 @@ exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
 const auth_service_1 = require("./auth.service");
 const admin_auth_guard_1 = require("../../common/guards/admin-auth.guard");
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
 let AuthController = class AuthController {
     authService;
     constructor(authService) {
         this.authService = authService;
     }
     async login(body) {
-        return this.authService.login(body);
+        rawLog(`[AuthController] POST /api/auth/login received, username="${body?.username}" (len=${body?.username?.length ?? 0})`);
+        try {
+            const result = await this.authService.login(body);
+            rawLog(`[AuthController] Login SUCCESS for username="${body?.username}", token_len=${result.token.length}`);
+            return result;
+        }
+        catch (err) {
+            const isHttp = err instanceof common_1.HttpException;
+            const status = isHttp ? err.getStatus() : 500;
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[AuthController] Login FAILED: status=${status}, message="${msg}"`);
+            if (err instanceof Error && err.stack) {
+                rawError(`[AuthController] Stack: ${err.stack}`);
+            }
+            if (isHttp)
+                throw err;
+            throw new common_1.UnauthorizedException('用户名或密码错误');
+        }
     }
     async me(req) {
         return req.admin;

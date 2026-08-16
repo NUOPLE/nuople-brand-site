@@ -15,116 +15,136 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.KeywordRuleService = void 0;
 const common_1 = require("@nestjs/common");
 const connection_1 = require("../../database/connection");
-const drizzle_orm_1 = require("drizzle-orm");
-const schema_1 = require("../../database/schema");
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
 let KeywordRuleService = class KeywordRuleService {
     db;
     constructor(db) {
         this.db = db;
     }
+    get sql() {
+        return this.db.$client;
+    }
     async list() {
-        const rules = await this.db
-            .select({
-            id: schema_1.keywordRule.id,
-            keywords: schema_1.keywordRule.keywords,
-            replyContent: schema_1.keywordRule.replyContent,
-            sortOrder: schema_1.keywordRule.sortOrder,
-        })
-            .from(schema_1.keywordRule)
-            .orderBy((0, drizzle_orm_1.asc)(schema_1.keywordRule.sortOrder));
-        return { items: rules };
+        rawLog(`[KeywordRuleService.list] STEP1 enter`);
+        rawLog(`[KeywordRuleService.list] STEP2 before SQL`);
+        const rules = await this.sql `
+      SELECT id, keywords, reply_content, sort_order
+      FROM keyword_rule
+      ORDER BY sort_order ASC
+    `;
+        rawLog(`[KeywordRuleService.list] STEP3 SQL returned rows=${rules.length}`);
+        const items = rules.map((row) => ({
+            id: row.id,
+            keywords: row.keywords ?? [],
+            replyContent: row.reply_content,
+            sortOrder: row.sort_order,
+        }));
+        return { items };
     }
     async create(dto) {
-        const maxResult = await this.db
-            .select({ max: (0, drizzle_orm_1.max)(schema_1.keywordRule.sortOrder) })
-            .from(schema_1.keywordRule);
+        rawLog(`[KeywordRuleService.create] STEP1 enter keywords=${JSON.stringify(dto.keywords)}`);
+        rawLog(`[KeywordRuleService.create] STEP2 before max SQL`);
+        const maxResult = await this.sql `
+      SELECT MAX(sort_order) AS max
+      FROM keyword_rule
+    `;
+        rawLog(`[KeywordRuleService.create] STEP3 max SQL returned max=${maxResult[0]?.max}`);
         const currentMax = maxResult[0]?.max ?? -1;
         const nextSortOrder = currentMax + 1;
-        const inserted = await this.db
-            .insert(schema_1.keywordRule)
-            .values({
-            keywords: dto.keywords,
-            replyContent: dto.replyContent,
-            sortOrder: nextSortOrder,
-        })
-            .returning({ id: schema_1.keywordRule.id });
+        rawLog(`[KeywordRuleService.create] STEP2 before insert SQL`);
+        const inserted = await this.sql `
+      INSERT INTO keyword_rule (keywords, reply_content, sort_order)
+      VALUES (${dto.keywords}, ${dto.replyContent}, ${nextSortOrder})
+      RETURNING id
+    `;
+        rawLog(`[KeywordRuleService.create] STEP3 insert SQL returned rows=${inserted.length}`);
         return { id: inserted[0].id };
     }
     async update(id, dto) {
-        const updated = await this.db
-            .update(schema_1.keywordRule)
-            .set({
-            keywords: dto.keywords,
-            replyContent: dto.replyContent,
-        })
-            .where((0, drizzle_orm_1.eq)(schema_1.keywordRule.id, id))
-            .returning({ id: schema_1.keywordRule.id });
+        rawLog(`[KeywordRuleService.update] STEP1 enter id=${id}`);
+        rawLog(`[KeywordRuleService.update] STEP2 before SQL`);
+        const updated = await this.sql `
+      UPDATE keyword_rule
+      SET keywords = ${dto.keywords}, reply_content = ${dto.replyContent}
+      WHERE id = ${id}
+      RETURNING id
+    `;
+        rawLog(`[KeywordRuleService.update] STEP3 SQL returned rows=${updated.length}`);
         if (updated.length === 0) {
             throw new common_1.NotFoundException('规则不存在');
         }
         return { success: true };
     }
     async remove(id) {
-        const deleted = await this.db
-            .delete(schema_1.keywordRule)
-            .where((0, drizzle_orm_1.eq)(schema_1.keywordRule.id, id))
-            .returning({ id: schema_1.keywordRule.id });
+        rawLog(`[KeywordRuleService.remove] STEP1 enter id=${id}`);
+        rawLog(`[KeywordRuleService.remove] STEP2 before SQL`);
+        const deleted = await this.sql `
+      DELETE FROM keyword_rule
+      WHERE id = ${id}
+      RETURNING id
+    `;
+        rawLog(`[KeywordRuleService.remove] STEP3 SQL returned rows=${deleted.length}`);
         if (deleted.length === 0) {
             throw new common_1.NotFoundException('规则不存在');
         }
         return { success: true };
     }
     async move(id, dto) {
-        const currentArr = await this.db
-            .select({
-            id: schema_1.keywordRule.id,
-            sortOrder: schema_1.keywordRule.sortOrder,
-        })
-            .from(schema_1.keywordRule)
-            .where((0, drizzle_orm_1.eq)(schema_1.keywordRule.id, id));
+        rawLog(`[KeywordRuleService.move] STEP1 enter id=${id} direction=${dto.direction}`);
+        rawLog(`[KeywordRuleService.move] STEP2 before current SQL`);
+        const currentArr = await this.sql `
+      SELECT id, sort_order
+      FROM keyword_rule
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+        rawLog(`[KeywordRuleService.move] STEP3 current SQL returned rows=${currentArr.length}`);
         if (currentArr.length === 0) {
             throw new common_1.NotFoundException('规则不存在');
         }
         const current = currentArr[0];
+        rawLog(`[KeywordRuleService.move] STEP2 before neighbor SQL`);
         let neighborArr;
         if (dto.direction === 'up') {
-            neighborArr = await this.db
-                .select({
-                id: schema_1.keywordRule.id,
-                sortOrder: schema_1.keywordRule.sortOrder,
-            })
-                .from(schema_1.keywordRule)
-                .where((0, drizzle_orm_1.lt)(schema_1.keywordRule.sortOrder, current.sortOrder))
-                .orderBy((0, drizzle_orm_1.desc)(schema_1.keywordRule.sortOrder))
-                .limit(1);
+            neighborArr = await this.sql `
+        SELECT id, sort_order
+        FROM keyword_rule
+        WHERE sort_order < ${current.sort_order}
+        ORDER BY sort_order DESC
+        LIMIT 1
+      `;
         }
         else {
-            neighborArr = await this.db
-                .select({
-                id: schema_1.keywordRule.id,
-                sortOrder: schema_1.keywordRule.sortOrder,
-            })
-                .from(schema_1.keywordRule)
-                .where((0, drizzle_orm_1.gt)(schema_1.keywordRule.sortOrder, current.sortOrder))
-                .orderBy((0, drizzle_orm_1.asc)(schema_1.keywordRule.sortOrder))
-                .limit(1);
+            neighborArr = await this.sql `
+        SELECT id, sort_order
+        FROM keyword_rule
+        WHERE sort_order > ${current.sort_order}
+        ORDER BY sort_order ASC
+        LIMIT 1
+      `;
         }
+        rawLog(`[KeywordRuleService.move] STEP3 neighbor SQL returned rows=${neighborArr.length}`);
         if (neighborArr.length === 0) {
             return { success: true };
         }
         const neighbor = neighborArr[0];
-        const currentSort = current.sortOrder;
-        const neighborSort = neighbor.sortOrder;
-        await this.db.transaction(async (tx) => {
-            await tx
-                .update(schema_1.keywordRule)
-                .set({ sortOrder: neighborSort })
-                .where((0, drizzle_orm_1.eq)(schema_1.keywordRule.id, id));
-            await tx
-                .update(schema_1.keywordRule)
-                .set({ sortOrder: currentSort })
-                .where((0, drizzle_orm_1.eq)(schema_1.keywordRule.id, neighbor.id));
-        });
+        const currentSort = current.sort_order;
+        const neighborSort = neighbor.sort_order;
+        rawLog(`[KeywordRuleService.move] STEP2 before UPDATE #1 (current)`);
+        await this.sql `
+      UPDATE keyword_rule
+      SET sort_order = ${neighborSort}
+      WHERE id = ${id}
+    `;
+        rawLog(`[KeywordRuleService.move] STEP3 UPDATE #1 done`);
+        rawLog(`[KeywordRuleService.move] STEP2 before UPDATE #2 (neighbor)`);
+        await this.sql `
+      UPDATE keyword_rule
+      SET sort_order = ${currentSort}
+      WHERE id = ${neighbor.id}
+    `;
+        rawLog(`[KeywordRuleService.move] STEP3 UPDATE #2 done`);
         return { success: true };
     }
 };

@@ -29,7 +29,7 @@ const Footer = () => {
                 {settings?.siteTitle || '诺普品牌'}
               </span>
               <span className="text-[10px] tracking-[0.2em] text-white/50 font-light">
-                BRAND & ART
+                Design & Art
               </span>
             </div>
             <p className="text-xs text-white/40">
@@ -38,8 +38,10 @@ const Footer = () => {
             </p>
           </div>
 
-          <div className="text-xs text-white/40 tracking-wider">
-            {settings?.footer.socialLinks || 'Weibo / Instagram / Behance'}
+          <div className="flex justify-center md:justify-end">
+            <div className="w-24 h-24 border border-dashed border-white/20 rounded flex items-center justify-center text-[10px] text-white/40 tracking-wider">
+              二维码
+            </div>
           </div>
         </div>
       </div>

@@ -54,7 +54,7 @@ const PublicNavbar = () => {
   };
 
   const brandTitle = settings?.siteTitle || '诺普品牌';
-  const brandSubtitle = 'BRAND & ART';
+  const brandSubtitle = 'Design & Art';
 
   return (
     <header

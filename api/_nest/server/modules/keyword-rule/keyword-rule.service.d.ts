@@ -3,6 +3,7 @@ import type { KeywordRuleListResponse, KeywordRuleCreateRequest, KeywordRuleUpda
 export declare class KeywordRuleService {
     private readonly db;
     constructor(db: PostgresJsDatabase);
+    private get sql();
     list(): Promise<KeywordRuleListResponse>;
     create(dto: KeywordRuleCreateRequest): Promise<IdResponse>;
     update(id: string, dto: KeywordRuleUpdateRequest): Promise<SuccessResponse>;

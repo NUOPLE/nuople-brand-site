@@ -15,57 +15,105 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardService = void 0;
 const common_1 = require("@nestjs/common");
 const connection_1 = require("../../database/connection");
-const drizzle_orm_1 = require("drizzle-orm");
-const schema_1 = require("@server/database/schema");
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
+const STATS_TIMEOUT_MS = 15000;
+const logger = new common_1.Logger('DashboardService');
+function withTimeout(promise, ms, label) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            const err = new Error(`DB operation timed out after ${ms}ms: ${label}`);
+            rawError(`[DashboardService] TIMEOUT: ${label} after ${ms}ms`);
+            reject(err);
+        }, ms);
+        promise
+            .then((value) => {
+            clearTimeout(timer);
+            resolve(value);
+        })
+            .catch((err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+    });
+}
+const EMPTY_STATS = {
+    totalWorks: 0,
+    totalMessages: 0,
+    unreadMessages: 0,
+    totalKeywordRules: 0,
+    recentMessages: [],
+    categoryStats: [],
+};
 let DashboardService = class DashboardService {
     db;
     constructor(db) {
         this.db = db;
     }
+    get rawSql() {
+        return this.db.$client;
+    }
     async getStats() {
-        const [totalWorksResult, totalMessagesResult, unreadMessagesResult, totalKeywordRulesResult, recentMessagesResult, categoryStatsResult,] = await Promise.all([
-            this.db.select({ count: (0, drizzle_orm_1.count)() }).from(schema_1.work),
-            this.db.select({ count: (0, drizzle_orm_1.count)() }).from(schema_1.message),
-            this.db.select({ count: (0, drizzle_orm_1.count)() }).from(schema_1.message).where((0, drizzle_orm_1.eq)(schema_1.message.isRead, false)),
-            this.db.select({ count: (0, drizzle_orm_1.count)() }).from(schema_1.keywordRule),
-            this.db
-                .select({
-                id: schema_1.message.id,
-                name: schema_1.message.name,
-                content: schema_1.message.content,
-                createdAt: schema_1.message.createdAt,
-                isRead: schema_1.message.isRead,
-            })
-                .from(schema_1.message)
-                .orderBy((0, drizzle_orm_1.desc)(schema_1.message.createdAt))
-                .limit(5),
-            this.db
-                .select({
-                category: schema_1.work.category,
-                count: (0, drizzle_orm_1.count)(),
-            })
-                .from(schema_1.work)
-                .groupBy(schema_1.work.category),
-        ]);
-        const recentMessages = recentMessagesResult.map((m) => ({
-            id: m.id,
-            name: m.name,
-            content: m.content,
-            createdAt: m.createdAt.toISOString(),
-            isRead: m.isRead,
-        }));
-        const categoryStats = categoryStatsResult.map((row) => ({
-            category: row.category,
-            count: Number(row.count),
-        }));
-        return {
-            totalWorks: Number(totalWorksResult[0]?.count ?? 0),
-            totalMessages: Number(totalMessagesResult[0]?.count ?? 0),
-            unreadMessages: Number(unreadMessagesResult[0]?.count ?? 0),
-            totalKeywordRules: Number(totalKeywordRulesResult[0]?.count ?? 0),
-            recentMessages,
-            categoryStats,
-        };
+        rawLog('[DashboardService] getStats STEP1 enter');
+        try {
+            const sql = this.rawSql;
+            const result = await withTimeout((async () => {
+                rawLog('[DashboardService] getStats STEP2 inside withTimeout, running 6 parallel SELECTs...');
+                const [totalWorksRows, totalMessagesRows, unreadMessagesRows, totalKeywordRulesRows, recentMessagesRows, categoryStatsRows,] = await Promise.all([
+                    sql `SELECT COUNT(*)::bigint AS count FROM work`,
+                    sql `SELECT COUNT(*)::bigint AS count FROM message`,
+                    sql `SELECT COUNT(*)::bigint AS count FROM message WHERE is_read = FALSE`,
+                    sql `SELECT COUNT(*)::bigint AS count FROM keyword_rule`,
+                    sql `
+              SELECT id, name, content, _created_at, is_read
+              FROM message
+              ORDER BY _created_at DESC
+              LIMIT 5
+            `,
+                    sql `SELECT category, COUNT(*)::bigint AS count FROM work GROUP BY category`,
+                ]);
+                rawLog('[DashboardService] getStats STEP3 all 6 queries returned');
+                const recentMessages = recentMessagesRows.map((m) => ({
+                    id: m.id,
+                    name: m.name,
+                    content: m.content,
+                    createdAt: new Date(m._created_at).toISOString(),
+                    isRead: m.is_read,
+                }));
+                const categoryStats = categoryStatsRows.map((row) => ({
+                    category: row.category,
+                    count: Number(row.count),
+                }));
+                return {
+                    totalWorks: Number(totalWorksRows[0]?.count ?? 0),
+                    totalMessages: Number(totalMessagesRows[0]?.count ?? 0),
+                    unreadMessages: Number(unreadMessagesRows[0]?.count ?? 0),
+                    totalKeywordRules: Number(totalKeywordRulesRows[0]?.count ?? 0),
+                    recentMessages,
+                    categoryStats,
+                };
+            })(), STATS_TIMEOUT_MS, 'dashboard-stats');
+            rawLog('[DashboardService] getStats STEP4 success');
+            return result;
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            rawError(`[DashboardService] getStats FAILED (returning zeros): ${msg}`);
+            if (err instanceof Error && err.stack) {
+                rawError(`[DashboardService] Stack: ${err.stack}`);
+            }
+            let current = err;
+            for (let depth = 0; depth < 4 && current && typeof current === 'object'; depth += 1) {
+                const { code, severity, detail, schema, table, hint } = current;
+                if (code !== undefined || detail !== undefined) {
+                    rawError(`[DashboardService] PostgresError depth=${depth}: code=${code}, severity=${severity}, detail=${detail}, schema=${schema}, table=${table}, hint=${hint}`);
+                }
+                const { cause } = current;
+                current = cause;
+            }
+            logger.error(`getStats failed, returning empty stats: ${msg}`);
+            return EMPTY_STATS;
+        }
     }
 };
 exports.DashboardService = DashboardService;
