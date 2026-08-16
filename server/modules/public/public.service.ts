@@ -1,8 +1,24 @@
 import { Inject, Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { eq, and, like, count, desc, asc } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { DRIZZLE_DATABASE } from '../../database/connection';
+
+import type {
+  PublicWorkListItem,
+  PublicWorkListResponse,
+  PublicWorkDetail,
+  PublicSiteSettings,
+  PublicKeywordRule,
+  PublicKeywordRulesResponse,
+  PublicMessageSubmitRequest,
+  PublicMessageSubmitResponse,
+  PublicFeaturedWorksResponse,
+  ServiceItem,
+  ProcessStep,
+  ContactInfo,
+  FooterInfo,
+  WorkCategory,
+} from '@shared/api.interface';
 
 const DB_TIMEOUT_MS = 15000;
 const logger = new Logger('PublicService');
@@ -31,23 +47,6 @@ function withTimeout<T>(
       });
   });
 }
-import { work, keywordRule, message, siteSetting } from '../../database/schema';
-import type {
-  PublicWorkListItem,
-  PublicWorkListResponse,
-  PublicWorkDetail,
-  PublicSiteSettings,
-  PublicKeywordRule,
-  PublicKeywordRulesResponse,
-  PublicMessageSubmitRequest,
-  PublicMessageSubmitResponse,
-  PublicFeaturedWorksResponse,
-  ServiceItem,
-  ProcessStep,
-  ContactInfo,
-  FooterInfo,
-  WorkCategory,
-} from '@shared/api.interface';
 
 const DEFAULT_SETTINGS: PublicSiteSettings = {
   siteTitle: 'NUOPLE BRAND & ART',
@@ -94,63 +93,51 @@ export class PublicService {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
 
+  private get rawSql(): ReturnType<typeof import('postgres')> {
+    return (this.db as unknown as { $client: ReturnType<typeof import('postgres')> }).$client;
+  }
+
   async getFeaturedWorks(limit = 5): Promise<PublicFeaturedWorksResponse> {
     const t0 = Date.now();
-    rawLog(`[Public] getFeaturedWorks limit=${limit}`);
-
-    let items: Array<{
-      id: string;
-      title: string;
-      category: string;
-      client: string;
-      year: string;
-      description: string;
-      coverImage: string;
-      tags: string[];
-    }>;
+    rawLog(`[Public] getFeaturedWorks STEP1 enter limit=${limit}`);
 
     try {
-      items = await withTimeout(
-        this.db
-          .select({
-            id: work.id,
-            title: work.title,
-            category: work.category,
-            client: work.client,
-            year: work.year,
-            description: work.description,
-            coverImage: work.coverImage,
-            tags: work.tags,
-          })
-          .from(work)
-          .orderBy(desc(work.createdAt))
-          .limit(limit),
+      const sql = this.rawSql;
+      rawLog('[Public] getFeaturedWorks STEP2 before SQL');
+      const rows = await withTimeout(
+        sql`
+          SELECT id, title, category, client, year, description, cover_image, tags
+          FROM work
+          ORDER BY _created_at DESC
+          LIMIT ${limit}
+        `,
         DB_TIMEOUT_MS,
         'get-featured-works',
       );
+      rawLog(`[Public] getFeaturedWorks STEP3 after SQL: ${rows.length} rows`);
+
+      rawLog(
+        `[Public] getFeaturedWorks done: ${rows.length} items in ${Date.now() - t0}ms`,
+      );
+
+      return {
+        items: rows.map((row: any) => ({
+          id: row.id,
+          title: row.title,
+          category: row.category as WorkCategory,
+          client: row.client,
+          year: row.year,
+          description: row.description,
+          coverImage: row.cover_image,
+          tags: row.tags as string[],
+        })),
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[Public] getFeaturedWorks FAILED: ${msg}`);
       logger.error(`getFeaturedWorks failed: ${msg}`);
       return { items: [] };
     }
-
-    rawLog(
-      `[Public] getFeaturedWorks done: ${items.length} items in ${Date.now() - t0}ms`,
-    );
-
-    return {
-      items: items.map((row) => ({
-        id: row.id,
-        title: row.title,
-        category: row.category as WorkCategory,
-        client: row.client,
-        year: row.year,
-        description: row.description,
-        coverImage: row.coverImage,
-        tags: row.tags,
-      })),
-    };
   }
 
   async getWorkList(params: {
@@ -159,14 +146,8 @@ export class PublicService {
     category?: string;
   }): Promise<PublicWorkListResponse> {
     const { page, pageSize, category } = params;
-    const conditions = [];
-    if (category) {
-      conditions.push(eq(work.category, category));
-    }
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
-
     const t0 = Date.now();
-    rawLog(`[Public] getWorkList page=${page} pageSize=${pageSize} category=${category || 'all'}`);
+    rawLog(`[Public] getWorkList STEP1 enter page=${page} pageSize=${pageSize} category=${category || 'all'}`);
 
     let total = 0;
     let items: Array<{
@@ -181,32 +162,50 @@ export class PublicService {
     }> = [];
 
     try {
-      const [countResult, workItems] = await withTimeout(
-        Promise.all([
-          this.db.select({ count: count() }).from(work).where(where),
-          this.db
-            .select({
-              id: work.id,
-              title: work.title,
-              category: work.category,
-              client: work.client,
-              year: work.year,
-              description: work.description,
-              coverImage: work.coverImage,
-              tags: work.tags,
-            })
-            .from(work)
-            .where(where)
-            .orderBy(desc(work.createdAt))
-            .limit(pageSize)
-            .offset((page - 1) * pageSize),
-        ]),
+      const sql = this.rawSql;
+      const offset = (page - 1) * pageSize;
+      rawLog('[Public] getWorkList STEP2 before SQL (count + list parallel)');
+
+      const [countRows, workRows] = await withTimeout(
+        category
+          ? Promise.all([
+              sql`SELECT COUNT(*)::bigint AS count FROM work WHERE category = ${category}`,
+              sql`
+                SELECT id, title, category, client, year, description, cover_image, tags
+                FROM work
+                WHERE category = ${category}
+                ORDER BY _created_at DESC
+                LIMIT ${pageSize}
+                OFFSET ${offset}
+              `,
+            ])
+          : Promise.all([
+              sql`SELECT COUNT(*)::bigint AS count FROM work`,
+              sql`
+                SELECT id, title, category, client, year, description, cover_image, tags
+                FROM work
+                ORDER BY _created_at DESC
+                LIMIT ${pageSize}
+                OFFSET ${offset}
+              `,
+            ]),
         DB_TIMEOUT_MS,
         `get-work-list-${page}-${pageSize}-${category || 'all'}`,
       );
 
-      total = Number(countResult[0]?.count ?? 0);
-      items = workItems;
+      rawLog(`[Public] getWorkList STEP3 after SQL: ${workRows.length} rows, count=${countRows[0]?.count ?? 0}`);
+
+      total = Number(countRows[0]?.count ?? 0);
+      items = workRows.map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        category: row.category,
+        client: row.client,
+        year: row.year,
+        description: row.description,
+        coverImage: row.cover_image,
+        tags: row.tags as string[],
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[Public] getWorkList FAILED: ${msg}`);
@@ -234,54 +233,70 @@ export class PublicService {
   }
 
   async getWorkById(id: string): Promise<PublicWorkDetail | null> {
-    const rows = await this.db.select().from(work).where(eq(work.id, id)).limit(1);
+    rawLog(`[Public] getWorkById STEP1 enter id=${id}`);
+    const sql = this.rawSql;
+    rawLog('[Public] getWorkById STEP2 before SQL');
+    const rows = await sql`
+      SELECT id, title, category, client, industry, design_type, year, description,
+             tags, content, cover_image, hero_image, gallery, _created_at
+      FROM work
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+    rawLog(`[Public] getWorkById STEP3 after SQL: ${rows.length} rows`);
     if (rows.length === 0) return null;
-    const row = rows[0]!;
+    const row: any = rows[0]!;
+    let gallery: PublicWorkDetail['gallery'] = [];
+    try {
+      gallery = JSON.parse(row.gallery) as PublicWorkDetail['gallery'];
+    } catch {
+      gallery = [];
+    }
     return {
       id: row.id,
       title: row.title,
       category: row.category as WorkCategory,
       client: row.client,
       industry: row.industry,
-      designType: row.designType,
+      designType: row.design_type,
       year: row.year,
       description: row.description,
-      tags: row.tags,
+      tags: row.tags as string[],
       content: row.content,
-      coverImage: row.coverImage,
-      heroImage: row.heroImage,
-      gallery: row.gallery as PublicWorkDetail['gallery'],
-      createdAt: row.createdAt.toISOString(),
+      coverImage: row.cover_image,
+      heroImage: row.hero_image,
+      gallery,
+      createdAt: new Date(row._created_at).toISOString(),
     };
   }
 
   async getNextWork(id: string): Promise<PublicWorkListItem | null> {
-    const current = await this.db
-      .select({ createdAt: work.createdAt })
-      .from(work)
-      .where(eq(work.id, id))
-      .limit(1);
-    if (current.length === 0) return null;
+    rawLog(`[Public] getNextWork STEP1 enter id=${id}`);
+    const sql = this.rawSql;
+    rawLog('[Public] getNextWork STEP2 before SQL (get current)');
 
-    const rows = await this.db
-      .select({
-        id: work.id,
-        title: work.title,
-        category: work.category,
-        client: work.client,
-        year: work.year,
-        description: work.description,
-        coverImage: work.coverImage,
-        tags: work.tags,
-      })
-      .from(work)
-      .where(asc(work.createdAt))
-      .orderBy(asc(work.createdAt))
-      .limit(1);
+    const currentRows = await sql`
+      SELECT _created_at
+      FROM work
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+    if (currentRows.length === 0) return null;
+    const currentCreatedAt: any = currentRows[0]!._created_at;
+
+    rawLog('[Public] getNextWork STEP3 before SQL (find next)');
+
+    const rows = await sql`
+      SELECT id, title, category, client, year, description, cover_image, tags
+      FROM work
+      WHERE _created_at < ${currentCreatedAt}
+      ORDER BY _created_at DESC
+      LIMIT 1
+    `;
+    rawLog(`[Public] getNextWork STEP4 after SQL: ${rows.length} rows`);
 
     if (rows.length === 0) return null;
-    const row = rows[0]!;
-    if (row.id === id) return null;
+    const row: any = rows[0]!;
     return {
       id: row.id,
       title: row.title,
@@ -289,135 +304,133 @@ export class PublicService {
       client: row.client,
       year: row.year,
       description: row.description,
-      coverImage: row.coverImage,
-      tags: row.tags,
+      coverImage: row.cover_image,
+      tags: row.tags as string[],
     };
   }
 
   async getSiteSettings(): Promise<PublicSiteSettings> {
     const t0 = Date.now();
-    rawLog(`[Public] getSiteSettings`);
+    rawLog('[Public] getSiteSettings STEP1 enter');
 
-    let rows: Array<{ settingKey: string; settingValue: string }>;
     try {
-      rows = (await withTimeout(
-        this.db
-          .select({
-            settingKey: siteSetting.settingKey,
-            settingValue: siteSetting.settingValue,
-          })
-          .from(siteSetting),
+      const sql = this.rawSql;
+      rawLog('[Public] getSiteSettings STEP2 before SQL');
+      const rows = await withTimeout(
+        sql`SELECT setting_key, setting_value FROM site_setting`,
         DB_TIMEOUT_MS,
         'get-site-settings',
-      )) as Array<{ settingKey: string; settingValue: string }>;
+      );
+      rawLog(`[Public] getSiteSettings STEP3 after SQL: ${rows.length} rows`);
+
+      rawLog(
+        `[Public] getSiteSettings done: ${rows.length} rows in ${Date.now() - t0}ms`,
+      );
+
+      const map = new Map<string, string>();
+      for (const row of rows as any[]) {
+        map.set(row.setting_key, row.setting_value);
+      }
+
+      const parseJson = <T>(key: string, fallback: T): T => {
+        const val = map.get(key);
+        if (!val) return fallback;
+        try {
+          return JSON.parse(val) as T;
+        } catch {
+          return fallback;
+        }
+      };
+
+      return {
+        siteTitle: map.get('site_title') || DEFAULT_SETTINGS.siteTitle,
+        companyName: map.get('company_name') || DEFAULT_SETTINGS.companyName,
+        logoImage: map.get('logo_image') || DEFAULT_SETTINGS.logoImage,
+        heroSlogan: map.get('hero_slogan') || DEFAULT_SETTINGS.heroSlogan,
+        heroSubtitle: map.get('hero_subtitle') || DEFAULT_SETTINGS.heroSubtitle,
+        aboutUs: map.get('about_us') || DEFAULT_SETTINGS.aboutUs,
+        services: parseJson<ServiceItem[]>('services', DEFAULT_SETTINGS.services),
+        designProcess: parseJson<ProcessStep[]>(
+          'design_process',
+          DEFAULT_SETTINGS.designProcess,
+        ),
+        contact: parseJson<ContactInfo>('contact', DEFAULT_SETTINGS.contact),
+        footer: parseJson<FooterInfo>('footer', DEFAULT_SETTINGS.footer),
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[Public] getSiteSettings FAILED: ${msg}`);
       logger.error(`getSiteSettings failed: ${msg}`);
       return DEFAULT_SETTINGS;
     }
-
-    rawLog(
-      `[Public] getSiteSettings done: ${rows.length} rows in ${Date.now() - t0}ms`,
-    );
-
-    const map = new Map<string, string>();
-    for (const row of rows) {
-      map.set(row.settingKey, row.settingValue);
-    }
-
-    const parseJson = <T>(key: string, fallback: T): T => {
-      const val = map.get(key);
-      if (!val) return fallback;
-      try {
-        return JSON.parse(val) as T;
-      } catch {
-        return fallback;
-      }
-    };
-
-    return {
-      siteTitle: map.get('site_title') || DEFAULT_SETTINGS.siteTitle,
-      companyName: map.get('company_name') || DEFAULT_SETTINGS.companyName,
-      logoImage: map.get('logo_image') || DEFAULT_SETTINGS.logoImage,
-      heroSlogan: map.get('hero_slogan') || DEFAULT_SETTINGS.heroSlogan,
-      heroSubtitle: map.get('hero_subtitle') || DEFAULT_SETTINGS.heroSubtitle,
-      aboutUs: map.get('about_us') || DEFAULT_SETTINGS.aboutUs,
-      services: parseJson<ServiceItem[]>('services', DEFAULT_SETTINGS.services),
-      designProcess: parseJson<ProcessStep[]>(
-        'design_process',
-        DEFAULT_SETTINGS.designProcess,
-      ),
-      contact: parseJson<ContactInfo>('contact', DEFAULT_SETTINGS.contact),
-      footer: parseJson<FooterInfo>('footer', DEFAULT_SETTINGS.footer),
-    };
   }
 
   async getKeywordRules(): Promise<PublicKeywordRulesResponse> {
-    rawLog('[Public] getKeywordRules');
-    let rows: Array<{
-      id: string;
-      keywords: string[];
-      replyContent: string;
-    }> = [];
+    rawLog('[Public] getKeywordRules STEP1 enter');
     try {
-      rows = (await withTimeout(
-        this.db
-          .select({
-            id: keywordRule.id,
-            keywords: keywordRule.keywords,
-            replyContent: keywordRule.replyContent,
-          })
-          .from(keywordRule)
-          .orderBy(asc(keywordRule.sortOrder), asc(keywordRule.createdAt)),
+      const sql = this.rawSql;
+      rawLog('[Public] getKeywordRules STEP2 before SQL');
+      const rows = await withTimeout(
+        sql`
+          SELECT id, keywords, reply_content
+          FROM keyword_rule
+          ORDER BY sort_order ASC, _created_at ASC
+        `,
         DB_TIMEOUT_MS,
         'get-keyword-rules',
-      )) as Array<{
-        id: string;
-        keywords: string[];
-        replyContent: string;
-      }>;
+      );
+      rawLog(`[Public] getKeywordRules STEP3 after SQL: ${rows.length} rows`);
+      rawLog(`[Public] getKeywordRules done: ${rows.length} rows`);
+
+      return {
+        items: (rows as any[]).map((row) => ({
+          id: row.id,
+          keywords: row.keywords as string[],
+          replyContent: row.reply_content,
+        })),
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[Public] getKeywordRules FAILED: ${msg}`);
       logger.error(`getKeywordRules failed: ${msg}`);
       return { items: [] };
     }
-    rawLog(`[Public] getKeywordRules done: ${rows.length} rows`);
-
-    return {
-      items: rows.map((row) => ({
-        id: row.id,
-        keywords: row.keywords,
-        replyContent: row.replyContent,
-      })),
-    };
   }
 
   async submitMessage(
     dto: PublicMessageSubmitRequest,
   ): Promise<PublicMessageSubmitResponse> {
     rawLog(
-      `[Public] submitMessage name=${dto.name} email=${dto.email}`,
+      `[Public] submitMessage STEP1 enter name=${dto.name} email=${dto.email} content_len=${dto.content.length}`,
     );
     try {
+      const rawSql = (this.db as unknown as { $client: ReturnType<typeof import('postgres')> }).$client;
+      if (!rawSql) {
+        rawError('[Public] submitMessage FAILED: raw sql client ($client) not available');
+        throw new BadRequestException('留言提交失败，请稍后重试');
+      }
+      rawLog('[Public] submitMessage STEP2 got rawSqlClient via drizzle $client, executing INSERT...');
+
       const result = await withTimeout(
-        this.db
-          .insert(message)
-          .values({
-            name: dto.name,
-            email: dto.email,
-            content: dto.content,
-            isRead: false,
-          })
-          .returning({ id: message.id }),
+        (async () => {
+          rawLog('[Public] submitMessage STEP3 inside withTimeout, sending SQL...');
+          const rows = await rawSql`
+            INSERT INTO message (name, email, content, is_read)
+            VALUES (${dto.name}, ${dto.email}, ${dto.content}, FALSE)
+            RETURNING id
+          `;
+          rawLog(`[Public] submitMessage STEP4 INSERT returned, rows=${rows.length}`);
+          return rows as unknown as Array<{ id: string }>;
+        })(),
         DB_TIMEOUT_MS,
-        'submit-message',
+        'submit-message-raw',
       );
-      rawLog(`[Public] submitMessage done: id=${result[0]!.id}`);
+
+      rawLog(`[Public] submitMessage STEP5 done: id=${result[0]!.id}`);
       return { success: true, id: result[0]!.id };
     } catch (err) {
-      rawError(`[Public] submitMessage CATCH err=`, err);
+      rawError('[Public] submitMessage CATCH err=');
+      rawError(err);
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[Public] submitMessage FAILED: ${msg}`);
       if (err instanceof Error && err.stack) {

@@ -1,9 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DRIZZLE_DATABASE } from '../../database/connection';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { eq, lt, gt, asc, desc, max } from 'drizzle-orm';
 
-import { keywordRule } from '../../database/schema';
 import type {
   KeywordRuleListResponse,
   KeywordRuleCreateRequest,
@@ -14,52 +12,76 @@ import type {
   SuccessResponse,
 } from '@shared/api.interface';
 
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
+
 @Injectable()
 export class KeywordRuleService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
 
+  private get sql(): ReturnType<typeof import('postgres')> {
+    return (this.db as unknown as { $client: ReturnType<typeof import('postgres')> }).$client;
+  }
+
   async list(): Promise<KeywordRuleListResponse> {
-    const rules: KeywordRuleType[] = await this.db
-      .select({
-        id: keywordRule.id,
-        keywords: keywordRule.keywords,
-        replyContent: keywordRule.replyContent,
-        sortOrder: keywordRule.sortOrder,
-      })
-      .from(keywordRule)
-      .orderBy(asc(keywordRule.sortOrder));
-    return { items: rules };
+    rawLog(`[KeywordRuleService.list] STEP1 enter`);
+
+    rawLog(`[KeywordRuleService.list] STEP2 before SQL`);
+    const rules = await this.sql`
+      SELECT id, keywords, reply_content, sort_order
+      FROM keyword_rule
+      ORDER BY sort_order ASC
+    `;
+    rawLog(`[KeywordRuleService.list] STEP3 SQL returned rows=${rules.length}`);
+
+    const items: KeywordRuleType[] = rules.map((row: any) => ({
+      id: row.id,
+      keywords: row.keywords ?? [],
+      replyContent: row.reply_content,
+      sortOrder: row.sort_order,
+    }));
+
+    return { items };
   }
 
   async create(dto: KeywordRuleCreateRequest): Promise<IdResponse> {
-    const maxResult = await this.db
-      .select({ max: max(keywordRule.sortOrder) })
-      .from(keywordRule);
+    rawLog(`[KeywordRuleService.create] STEP1 enter keywords=${JSON.stringify(dto.keywords)}`);
+
+    rawLog(`[KeywordRuleService.create] STEP2 before max SQL`);
+    const maxResult = await this.sql`
+      SELECT MAX(sort_order) AS max
+      FROM keyword_rule
+    `;
+    rawLog(`[KeywordRuleService.create] STEP3 max SQL returned max=${maxResult[0]?.max}`);
+
     const currentMax: number = maxResult[0]?.max ?? -1;
     const nextSortOrder: number = currentMax + 1;
 
-    const inserted = await this.db
-      .insert(keywordRule)
-      .values({
-        keywords: dto.keywords,
-        replyContent: dto.replyContent,
-        sortOrder: nextSortOrder,
-      })
-      .returning({ id: keywordRule.id });
-    return { id: inserted[0].id };
+    rawLog(`[KeywordRuleService.create] STEP2 before insert SQL`);
+    const inserted = await this.sql`
+      INSERT INTO keyword_rule (keywords, reply_content, sort_order)
+      VALUES (${dto.keywords}, ${dto.replyContent}, ${nextSortOrder})
+      RETURNING id
+    `;
+    rawLog(`[KeywordRuleService.create] STEP3 insert SQL returned rows=${inserted.length}`);
+
+    return { id: (inserted[0] as any).id };
   }
 
   async update(id: string, dto: KeywordRuleUpdateRequest): Promise<SuccessResponse> {
-    const updated = await this.db
-      .update(keywordRule)
-      .set({
-        keywords: dto.keywords,
-        replyContent: dto.replyContent,
-      })
-      .where(eq(keywordRule.id, id))
-      .returning({ id: keywordRule.id });
+    rawLog(`[KeywordRuleService.update] STEP1 enter id=${id}`);
+
+    rawLog(`[KeywordRuleService.update] STEP2 before SQL`);
+    const updated = await this.sql`
+      UPDATE keyword_rule
+      SET keywords = ${dto.keywords}, reply_content = ${dto.replyContent}
+      WHERE id = ${id}
+      RETURNING id
+    `;
+    rawLog(`[KeywordRuleService.update] STEP3 SQL returned rows=${updated.length}`);
+
     if (updated.length === 0) {
       throw new NotFoundException('规则不存在');
     }
@@ -67,10 +89,16 @@ export class KeywordRuleService {
   }
 
   async remove(id: string): Promise<SuccessResponse> {
-    const deleted = await this.db
-      .delete(keywordRule)
-      .where(eq(keywordRule.id, id))
-      .returning({ id: keywordRule.id });
+    rawLog(`[KeywordRuleService.remove] STEP1 enter id=${id}`);
+
+    rawLog(`[KeywordRuleService.remove] STEP2 before SQL`);
+    const deleted = await this.sql`
+      DELETE FROM keyword_rule
+      WHERE id = ${id}
+      RETURNING id
+    `;
+    rawLog(`[KeywordRuleService.remove] STEP3 SQL returned rows=${deleted.length}`);
+
     if (deleted.length === 0) {
       throw new NotFoundException('规则不存在');
     }
@@ -78,58 +106,65 @@ export class KeywordRuleService {
   }
 
   async move(id: string, dto: KeywordRuleMoveRequest): Promise<SuccessResponse> {
-    const currentArr = await this.db
-      .select({
-        id: keywordRule.id,
-        sortOrder: keywordRule.sortOrder,
-      })
-      .from(keywordRule)
-      .where(eq(keywordRule.id, id));
+    rawLog(`[KeywordRuleService.move] STEP1 enter id=${id} direction=${dto.direction}`);
+
+    rawLog(`[KeywordRuleService.move] STEP2 before current SQL`);
+    const currentArr = await this.sql`
+      SELECT id, sort_order
+      FROM keyword_rule
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+    rawLog(`[KeywordRuleService.move] STEP3 current SQL returned rows=${currentArr.length}`);
+
     if (currentArr.length === 0) {
       throw new NotFoundException('规则不存在');
     }
-    const current = currentArr[0];
+    const current = currentArr[0] as any;
 
-    let neighborArr: { id: string; sortOrder: number }[];
+    rawLog(`[KeywordRuleService.move] STEP2 before neighbor SQL`);
+    let neighborArr: any[];
     if (dto.direction === 'up') {
-      neighborArr = await this.db
-        .select({
-          id: keywordRule.id,
-          sortOrder: keywordRule.sortOrder,
-        })
-        .from(keywordRule)
-        .where(lt(keywordRule.sortOrder, current.sortOrder))
-        .orderBy(desc(keywordRule.sortOrder))
-        .limit(1);
+      neighborArr = await this.sql`
+        SELECT id, sort_order
+        FROM keyword_rule
+        WHERE sort_order < ${current.sort_order}
+        ORDER BY sort_order DESC
+        LIMIT 1
+      `;
     } else {
-      neighborArr = await this.db
-        .select({
-          id: keywordRule.id,
-          sortOrder: keywordRule.sortOrder,
-        })
-        .from(keywordRule)
-        .where(gt(keywordRule.sortOrder, current.sortOrder))
-        .orderBy(asc(keywordRule.sortOrder))
-        .limit(1);
+      neighborArr = await this.sql`
+        SELECT id, sort_order
+        FROM keyword_rule
+        WHERE sort_order > ${current.sort_order}
+        ORDER BY sort_order ASC
+        LIMIT 1
+      `;
     }
+    rawLog(`[KeywordRuleService.move] STEP3 neighbor SQL returned rows=${neighborArr.length}`);
 
     if (neighborArr.length === 0) {
       return { success: true };
     }
     const neighbor = neighborArr[0];
-    const currentSort = current.sortOrder;
-    const neighborSort = neighbor.sortOrder;
+    const currentSort = current.sort_order;
+    const neighborSort = neighbor.sort_order;
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(keywordRule)
-        .set({ sortOrder: neighborSort })
-        .where(eq(keywordRule.id, id));
-      await tx
-        .update(keywordRule)
-        .set({ sortOrder: currentSort })
-        .where(eq(keywordRule.id, neighbor.id));
-    });
+    rawLog(`[KeywordRuleService.move] STEP2 before UPDATE #1 (current)`);
+    await this.sql`
+      UPDATE keyword_rule
+      SET sort_order = ${neighborSort}
+      WHERE id = ${id}
+    `;
+    rawLog(`[KeywordRuleService.move] STEP3 UPDATE #1 done`);
+
+    rawLog(`[KeywordRuleService.move] STEP2 before UPDATE #2 (neighbor)`);
+    await this.sql`
+      UPDATE keyword_rule
+      SET sort_order = ${currentSort}
+      WHERE id = ${neighbor.id}
+    `;
+    rawLog(`[KeywordRuleService.move] STEP3 UPDATE #2 done`);
 
     return { success: true };
   }

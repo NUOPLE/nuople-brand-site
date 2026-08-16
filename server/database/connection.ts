@@ -8,6 +8,7 @@ const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 
 let dbInstance: ReturnType<typeof drizzle> | null = null;
+let rawSqlInstance: ReturnType<typeof postgres> | null = null;
 let initPromise: Promise<void> | null = null;
 let initFailed = false;
 let initError: Error | null = null;
@@ -76,8 +77,8 @@ export function getDatabase(): ReturnType<typeof drizzle> {
   const initStart = Date.now();
 
   const sql = postgres(databaseUrl, {
-    max: 1,
-    idle_timeout: 30,
+    max: 3,
+    idle_timeout: 15,
     connect_timeout: connectTimeoutSec,
     ssl,
     prepare: false,
@@ -127,6 +128,7 @@ export function getDatabase(): ReturnType<typeof drizzle> {
   }
 
   dbInstance = drizzle(sql);
+  rawSqlInstance = sql;
   (dbInstance as unknown as { $initPromise: Promise<void> }).$initPromise = initPromise;
   logger.log('Database drizzle instance created');
   rawLog('[DB] drizzle instance created, verifying connection...');
@@ -164,6 +166,16 @@ export function getDatabase(): ReturnType<typeof drizzle> {
     });
 
   return dbInstance;
+}
+
+export function getRawSqlClient(): ReturnType<typeof postgres> {
+  if (!rawSqlInstance) {
+    getDatabase();
+  }
+  if (!rawSqlInstance) {
+    throw new Error('Raw SQL client not initialized');
+  }
+  return rawSqlInstance;
 }
 
 export function getDatabaseInitPromise(): Promise<void> | null {

@@ -4,12 +4,10 @@ import {
   Logger,
   Inject,
 } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { JwtService } from '@nestjs/jwt';
 
 import { DRIZZLE_DATABASE } from '../../database/connection';
-import { admin } from '../../database/schema';
 import {
   hashPassword,
   verifyPassword,
@@ -55,6 +53,10 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
+  private get sql(): ReturnType<typeof import('postgres')> {
+    return (this.db as unknown as { $client: ReturnType<typeof import('postgres')> }).$client;
+  }
+
   private async verifyPassword(
     password: string,
     passwordHash: string,
@@ -66,19 +68,23 @@ export class AuthService {
     if (this.defaultAdminCreated) return;
 
     try {
+      rawLog(`[AuthService.ensureDefaultAdmin] STEP1 enter`);
       rawLog(
         `[AuthService] Checking if default admin (${DEFAULT_ADMIN_USERNAME}) exists...`,
       );
 
+      rawLog(`[AuthService.ensureDefaultAdmin] STEP2 before select SQL`);
       const existing = await withTimeout(
-        this.db
-          .select({ id: admin.id })
-          .from(admin)
-          .where(eq(admin.username, DEFAULT_ADMIN_USERNAME))
-          .limit(1),
+        this.sql`
+          SELECT id
+          FROM admin
+          WHERE username = ${DEFAULT_ADMIN_USERNAME}
+          LIMIT 1
+        `,
         DB_TIMEOUT_MS,
         'check-default-admin',
       );
+      rawLog(`[AuthService.ensureDefaultAdmin] STEP3 select SQL returned rows=${existing.length}`);
 
       if (existing.length > 0) {
         rawLog(`[AuthService] Admin user already exists, skipping creation`);
@@ -91,24 +97,25 @@ export class AuthService {
       );
 
       const passwordHash = await hashPassword(DEFAULT_ADMIN_PASSWORD);
+
+      rawLog(`[AuthService.ensureDefaultAdmin] STEP2 before insert SQL`);
       const result = await withTimeout(
-        this.db
-          .insert(admin)
-          .values({
-            username: DEFAULT_ADMIN_USERNAME,
-            passwordHash,
-          })
-          .returning({ id: admin.id, username: admin.username }),
+        this.sql`
+          INSERT INTO admin (username, password_hash)
+          VALUES (${DEFAULT_ADMIN_USERNAME}, ${passwordHash})
+          RETURNING id, username
+        `,
         DB_TIMEOUT_MS,
         'create-default-admin',
       );
+      rawLog(`[AuthService.ensureDefaultAdmin] STEP3 insert SQL returned rows=${result.length}`);
 
       this.defaultAdminCreated = true;
       rawLog(
-        `[AuthService] Default admin created successfully: id=${result[0]!.id}, username=${result[0]!.username}`,
+        `[AuthService] Default admin created successfully: id=${(result[0] as any).id}, username=${(result[0] as any).username}`,
       );
       logger.log(
-        `Default admin created: ${result[0]!.username} (id=${result[0]!.id})`,
+        `Default admin created: ${(result[0] as any).username} (id=${(result[0] as any).id})`,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -123,30 +130,28 @@ export class AuthService {
 
   async login(dto: LoginRequest): Promise<{ admin: Admin; token: string }> {
     const t0 = Date.now();
-    rawLog(
-      `[Login] Attempt login for username="${dto.username}" (len=${dto.username?.length ?? 0})`,
-    );
+    rawLog(`[AuthService.login] STEP1 enter username="${dto.username}" (len=${dto.username?.length ?? 0})`);
 
     let rows: Array<{
       id: string;
       username: string;
-      passwordHash: string;
+      password_hash: string;
     }>;
 
     try {
-      rows = await withTimeout(
-        this.db
-          .select({
-            id: admin.id,
-            username: admin.username,
-            passwordHash: admin.passwordHash,
-          })
-          .from(admin)
-          .where(eq(admin.username, dto.username))
-          .limit(1),
+      rawLog(`[AuthService.login] STEP2 before select SQL`);
+      const result = await withTimeout(
+        this.sql`
+          SELECT id, username, password_hash
+          FROM admin
+          WHERE username = ${dto.username}
+          LIMIT 1
+        `,
         DB_TIMEOUT_MS,
         `select-admin-${dto.username}`,
       );
+      rawLog(`[AuthService.login] STEP3 select SQL returned rows=${result.length}`);
+      rows = result as unknown as Array<{ id: string; username: string; password_hash: string }>;
     } catch (dbErr) {
       const msg =
         dbErr instanceof Error ? dbErr.message : String(dbErr);
@@ -180,19 +185,19 @@ export class AuthService {
         }
 
         try {
-          rows = await withTimeout(
-            this.db
-              .select({
-                id: admin.id,
-                username: admin.username,
-                passwordHash: admin.passwordHash,
-              })
-              .from(admin)
-              .where(eq(admin.username, dto.username))
-              .limit(1),
+          rawLog(`[AuthService.login] STEP2 before reselect SQL`);
+          const result = await withTimeout(
+            this.sql`
+              SELECT id, username, password_hash
+              FROM admin
+              WHERE username = ${dto.username}
+              LIMIT 1
+            `,
             DB_TIMEOUT_MS,
             `reselect-admin-after-create`,
           );
+          rawLog(`[AuthService.login] STEP3 reselect SQL returned rows=${result.length}`);
+          rows = result as unknown as Array<{ id: string; username: string; password_hash: string }>;
         } catch (dbErr) {
           const msg =
             dbErr instanceof Error ? dbErr.message : String(dbErr);
@@ -212,12 +217,12 @@ export class AuthService {
 
     const row = rows[0]!;
     rawLog(
-      `[Login] Found user id=${row.id}, hashPrefix=${row.passwordHash.slice(0, 20)}...`,
+      `[Login] Found user id=${row.id}, hashPrefix=${row.password_hash.slice(0, 20)}...`,
     );
 
     let passwordValid: boolean;
     try {
-      passwordValid = await this.verifyPassword(dto.password, row.passwordHash);
+      passwordValid = await this.verifyPassword(dto.password, row.password_hash);
     } catch (verifyErr) {
       const msg =
         verifyErr instanceof Error ? verifyErr.message : String(verifyErr);

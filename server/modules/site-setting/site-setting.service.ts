@@ -1,9 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE } from '../../database/connection';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { inArray, sql } from 'drizzle-orm';
 
-import { siteSetting } from '../../database/schema';
 import type {
   SiteSettings,
   ServiceItem,
@@ -11,6 +9,9 @@ import type {
   ContactInfo,
   FooterInfo,
 } from '@shared/api.interface';
+
+const rawLog = globalThis.console.log.bind(globalThis.console);
+const rawError = globalThis.console.error.bind(globalThis.console);
 
 const SETTING_KEYS = {
   siteTitle: 'site_title',
@@ -30,21 +31,35 @@ const SETTING_KEYS = {
 
 const ALL_KEYS = Object.values(SETTING_KEYS);
 
+interface SettingRow {
+  setting_key: string;
+  setting_value: string;
+}
+
 @Injectable()
 export class SiteSettingService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
 
+  private get sql(): ReturnType<typeof import('postgres')> {
+    return (this.db as unknown as { $client: ReturnType<typeof import('postgres')> }).$client;
+  }
+
   async getSettings(): Promise<SiteSettings> {
-    const rows = await this.db
-      .select({ settingKey: siteSetting.settingKey, settingValue: siteSetting.settingValue })
-      .from(siteSetting)
-      .where(inArray(siteSetting.settingKey, ALL_KEYS));
+    rawLog('[SiteSettingService.getSettings] STEP1 enter');
+
+    rawLog('[SiteSettingService.getSettings] STEP2 before SQL');
+    const rows = await this.sql`
+      SELECT setting_key, setting_value
+      FROM site_setting
+      WHERE setting_key = ANY(${this.sql.array(ALL_KEYS)}::text[])
+    `;
+    rawLog(`[SiteSettingService.getSettings] STEP3 SQL returned rows=${rows.length}`);
 
     const map = new Map<string, string>();
-    for (const row of rows) {
-      map.set(row.settingKey, row.settingValue);
+    for (const row of rows as unknown as SettingRow[]) {
+      map.set(row.setting_key, row.setting_value);
     }
 
     const get = (key: string): string => map.get(key) ?? '';
@@ -101,29 +116,35 @@ export class SiteSettingService {
   }
 
   async updateSettings(settings: SiteSettings): Promise<{ success: true }> {
-    const values = [
-      { settingKey: SETTING_KEYS.siteTitle, settingValue: settings.siteTitle },
-      { settingKey: SETTING_KEYS.companyName, settingValue: settings.companyName },
-      { settingKey: SETTING_KEYS.logoImage, settingValue: settings.logoImage },
-      { settingKey: SETTING_KEYS.heroSlogan, settingValue: settings.heroSlogan },
-      { settingKey: SETTING_KEYS.heroSubtitle, settingValue: settings.heroSubtitle },
-      { settingKey: SETTING_KEYS.aboutUs, settingValue: settings.aboutUs },
-      { settingKey: SETTING_KEYS.services, settingValue: JSON.stringify(settings.services) },
-      { settingKey: SETTING_KEYS.designProcess, settingValue: JSON.stringify(settings.designProcess) },
-      { settingKey: SETTING_KEYS.contactPhone, settingValue: settings.contact.phone },
-      { settingKey: SETTING_KEYS.contactEmail, settingValue: settings.contact.email },
-      { settingKey: SETTING_KEYS.contactAddress, settingValue: settings.contact.address },
-      { settingKey: SETTING_KEYS.footerCopyright, settingValue: settings.footer.copyright },
-      { settingKey: SETTING_KEYS.footerSocialLinks, settingValue: settings.footer.socialLinks },
+    rawLog('[SiteSettingService.updateSettings] STEP1 enter');
+
+    const values: Array<{ key: string; value: string }> = [
+      { key: SETTING_KEYS.siteTitle, value: settings.siteTitle },
+      { key: SETTING_KEYS.companyName, value: settings.companyName },
+      { key: SETTING_KEYS.logoImage, value: settings.logoImage },
+      { key: SETTING_KEYS.heroSlogan, value: settings.heroSlogan },
+      { key: SETTING_KEYS.heroSubtitle, value: settings.heroSubtitle },
+      { key: SETTING_KEYS.aboutUs, value: settings.aboutUs },
+      { key: SETTING_KEYS.services, value: JSON.stringify(settings.services) },
+      { key: SETTING_KEYS.designProcess, value: JSON.stringify(settings.designProcess) },
+      { key: SETTING_KEYS.contactPhone, value: settings.contact.phone },
+      { key: SETTING_KEYS.contactEmail, value: settings.contact.email },
+      { key: SETTING_KEYS.contactAddress, value: settings.contact.address },
+      { key: SETTING_KEYS.footerCopyright, value: settings.footer.copyright },
+      { key: SETTING_KEYS.footerSocialLinks, value: settings.footer.socialLinks },
     ];
 
-    await this.db
-      .insert(siteSetting)
-      .values(values)
-      .onConflictDoUpdate({
-        target: siteSetting.settingKey,
-        set: { settingValue: sql`EXCLUDED.setting_value` },
-      });
+    rawLog(`[SiteSettingService.updateSettings] STEP2 before SQL (${values.length} keys)`);
+    const sql = this.sql;
+    const promises = values.map((v) =>
+      sql`
+        INSERT INTO site_setting (setting_key, setting_value)
+        VALUES (${v.key}, ${v.value})
+        ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, _updated_at = CURRENT_TIMESTAMP
+      `,
+    );
+    await Promise.all(promises);
+    rawLog('[SiteSettingService.updateSettings] STEP3 SQL completed');
 
     return { success: true };
   }
