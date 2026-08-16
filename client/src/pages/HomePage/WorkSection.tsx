@@ -7,10 +7,10 @@ import type { PublicWorkListItem, WorkCategory } from '@shared/api.interface';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 
 const CATEGORY_FILTERS: { value: string; label: string }[] = [
-  { value: '', label: 'All' },
-  { value: 'logo', label: 'LOGO' },
-  { value: 'vis', label: 'Brand Identity' },
-  { value: 'packaging', label: 'Packaging' },
+  { value: '', label: '全部' },
+  { value: 'logo', label: '标志' },
+  { value: 'vis', label: '品牌形象' },
+  { value: 'packaging', label: '包装' },
 ];
 
 const WorkSection = () => {

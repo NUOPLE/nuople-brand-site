@@ -53,7 +53,7 @@ const PublicNavbar = () => {
     }
   };
 
-  const brandTitle = settings?.siteTitle || 'NUOPLE';
+  const brandTitle = settings?.siteTitle || '诺普品牌';
   const brandSubtitle = 'BRAND & ART';
 
   return (

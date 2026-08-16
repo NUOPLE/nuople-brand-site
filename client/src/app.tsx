@@ -2,6 +2,7 @@ import React from 'react';
 import { Route, Routes, Navigate } from 'react-router-dom';
 
 import { AuthProvider } from './hooks/use-auth';
+import { useWatermarkRemover } from './hooks/use-watermark-remover';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import NotFound from './pages/NotFound/NotFound';
@@ -16,6 +17,8 @@ import HomePage from './pages/HomePage/HomePage';
 import WorkDetailPage from './pages/HomePage/WorkDetailPage';
 
 const RoutesComponent = () => {
+  useWatermarkRemover();
+
   return (
     <AuthProvider>
       <Routes>

@@ -26,7 +26,7 @@ const Footer = () => {
           <div>
             <div className="flex items-center gap-3 mb-2">
               <span className="text-lg font-bold tracking-tight">
-                {settings?.siteTitle || 'NUOPLE'}
+                {settings?.siteTitle || '诺普品牌'}
               </span>
               <span className="text-[10px] tracking-[0.2em] text-white/50 font-light">
                 BRAND & ART

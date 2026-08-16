@@ -414,12 +414,17 @@ export class PublicService {
       const result = await withTimeout(
         (async () => {
           rawLog('[Public] submitMessage STEP3 inside withTimeout, sending SQL...');
+          rawLog(`[Public] submitMessage SQL_PREVIEW: INSERT INTO message (name, email, content, is_read) VALUES ('${dto.name}', '${dto.email}', '${dto.content.slice(0, 30)}...', FALSE) RETURNING id`);
           const rows = await rawSql`
             INSERT INTO message (name, email, content, is_read)
             VALUES (${dto.name}, ${dto.email}, ${dto.content}, FALSE)
-            RETURNING id
+            RETURNING id, name, email, content, is_read, _created_at
           `;
           rawLog(`[Public] submitMessage STEP4 INSERT returned, rows=${rows.length}`);
+          if (rows.length > 0) {
+            const r = rows[0] as unknown as Record<string, unknown>;
+            rawLog(`[Public] submitMessage STEP4 detail: id=${r.id}, name=${r.name}, _created_at=${r._created_at}`);
+          }
           return rows as unknown as Array<{ id: string }>;
         })(),
         DB_TIMEOUT_MS,
