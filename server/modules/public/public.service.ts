@@ -417,6 +417,7 @@ export class PublicService {
       rawLog(`[Public] submitMessage done: id=${result[0]!.id}`);
       return { success: true, id: result[0]!.id };
     } catch (err) {
+      rawError(`[Public] submitMessage CATCH err=`, err);
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[Public] submitMessage FAILED: ${msg}`);
       if (err instanceof Error && err.stack) {
