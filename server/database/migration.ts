@@ -21,6 +21,8 @@ const DEFAULT_ADMIN_USERNAME = 'admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin123';
 
 const CREATE_TABLES_SQL = sql.raw(`
+  CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
   CREATE TABLE IF NOT EXISTS site_setting (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     setting_key VARCHAR(100) NOT NULL UNIQUE,
@@ -83,6 +85,14 @@ const CREATE_TABLES_SQL = sql.raw(`
   CREATE UNIQUE INDEX IF NOT EXISTS admin_username_key ON admin (username);
 `);
 
+const TABLE_NAMES = [
+  'site_setting',
+  'keyword_rule',
+  'message',
+  'work',
+  'admin',
+];
+
 export async function runMigrations(db: unknown): Promise<void> {
   rawLog('[DBMigration] Running CREATE TABLE IF NOT EXISTS migrations...');
   try {
@@ -95,7 +105,48 @@ export async function runMigrations(db: unknown): Promise<void> {
     if (err instanceof Error && err.stack) {
       rawError(`[DBMigration] Stack: ${err.stack}`);
     }
+    let current: unknown = err;
+    for (let depth = 0; depth < 4 && current && typeof current === 'object'; depth += 1) {
+      const { code, severity, detail, schema, table, position, hint } = current as {
+        code?: unknown;
+        severity?: unknown;
+        detail?: unknown;
+        schema?: unknown;
+        table?: unknown;
+        position?: unknown;
+        hint?: unknown;
+      };
+      if (code !== undefined || detail !== undefined) {
+        rawError(
+          `[DBMigration] PostgresError depth=${depth}: code=${code}, severity=${severity}, detail=${detail}, schema=${schema}, table=${table}, position=${position}, hint=${hint}`,
+        );
+      }
+      const { cause } = current as { cause?: unknown };
+      current = cause;
+    }
     logger.error(`Migration failed: ${msg}`);
+    throw err;
+  }
+
+  rawLog('[DBMigration] Verifying tables exist...');
+  try {
+    const result = (await asDb(db).execute(
+      sql.raw(
+        `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename IN (${TABLE_NAMES.map((t) => `'${t}'`).join(', ')})`,
+      ),
+    )) as Array<{ tablename: string }>;
+    const existing = new Set(result.map((row) => row.tablename));
+    const missing = TABLE_NAMES.filter((name) => !existing.has(name));
+    rawLog(
+      `[DBMigration] Table check: found=[${Array.from(existing).join(', ')}], missing=[${missing.join(', ')}]`,
+    );
+    if (missing.length > 0) {
+      rawError(`[DBMigration] CRITICAL: Missing tables: ${missing.join(', ')}`);
+      throw new Error(`Tables missing after migration: ${missing.join(', ')}`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    rawError(`[DBMigration] Verify tables FAILED: ${msg}`);
     throw err;
   }
 }

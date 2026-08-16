@@ -422,6 +422,30 @@ export class PublicService {
       if (err instanceof Error && err.stack) {
         rawError(`[Public] submitMessage Stack: ${err.stack}`);
       }
+      let current: unknown = err;
+      for (let depth = 0; depth < 4 && current && typeof current === 'object'; depth += 1) {
+        const { code, severity, detail, schema, table, column, constraint, cause } =
+          current as {
+            code?: unknown;
+            severity?: unknown;
+            detail?: unknown;
+            schema?: unknown;
+            table?: unknown;
+            column?: unknown;
+            constraint?: unknown;
+            cause?: unknown;
+          };
+        if (
+          code !== undefined ||
+          detail !== undefined ||
+          table !== undefined
+        ) {
+          rawError(
+            `[Public] submitMessage PostgresError depth=${depth}: code=${code}, severity=${severity}, detail=${detail}, schema=${schema}, table=${table}, column=${column}, constraint=${constraint}`,
+          );
+        }
+        current = cause;
+      }
       logger.error(`submitMessage failed: ${msg}`);
       throw new BadRequestException('留言提交失败，请稍后重试');
     }

@@ -6,6 +6,12 @@
 @source "../../node_modules/streamdown/dist/*.js";
 @config "../../tailwind.config.ts";
 
+/* 隐藏妙搭/豆包水印 */
+[data-custom-element="doubao-watermark"],
+[data-custom-element="doubao-watermark-mobile"] {
+  display: none !important;
+}
+
 html {
   scroll-behavior: smooth;
 }
