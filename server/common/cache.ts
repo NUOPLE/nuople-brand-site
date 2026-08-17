@@ -1,5 +1,7 @@
 const rawLog = globalThis.console.log.bind(globalThis.console);
 
+rawLog('[CACHE] module initialized (in-memory LRU-style map)');
+
 interface CacheEntry {
   value: unknown;
   expireAt: number;
@@ -17,17 +19,18 @@ function cleanup(): void {
 }
 
 export function getCache<T>(key: string): T | null {
+  rawLog(`[CACHE] checking key=${key}`);
   const entry = cacheMap.get(key);
   if (!entry) {
-    rawLog(`[CACHE] miss: ${key}`);
+    rawLog(`[CACHE] MISS key=${key}`);
     return null;
   }
   if (entry.expireAt <= Date.now()) {
     cacheMap.delete(key);
-    rawLog(`[CACHE] expired: ${key}`);
+    rawLog(`[CACHE] EXPIRED key=${key}`);
     return null;
   }
-  rawLog(`[CACHE] hit: ${key}`);
+  rawLog(`[CACHE] HIT key=${key}`);
   return entry.value as T;
 }
 

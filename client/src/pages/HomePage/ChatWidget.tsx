@@ -23,6 +23,7 @@ const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_COUNT = 30;
 const STORAGE_KEY = 'chat_message_id';
 const STORAGE_REPLIED_KEY = 'chat_message_replied';
+const STORAGE_HISTORY_KEY = 'chat_history';
 
 const containsHumanKeyword = (text: string): boolean => {
   const lower = text.toLowerCase();
@@ -95,12 +96,16 @@ const ChatWidget = () => {
   const showHumanReply = useCallback((replyContent: string) => {
     const replyMsg = makeBotMsg(`【人工客服】${replyContent}`, 'human');
     setMessages((prev) => [...prev, replyMsg]);
+    logger.info('[ChatWidget] human reply shown:', replyContent.slice(0, 50));
   }, []);
 
   const pollReply = useCallback(async (messageId: string) => {
+    logger.info(`[ChatWidget] poll result: pollCount=${pollCountRef.current}`);
     try {
       const detail: PublicMessageDetail = await getPublicMessageDetail(messageId);
-      logger.info('[ChatWidget] pollReply result:', JSON.stringify(detail));
+      logger.info(`[ChatWidget] API response: ${JSON.stringify(detail)}`);
+      const hasReply = Boolean(detail.replyContent);
+      logger.info(`[ChatWidget] poll result: hasReply=${hasReply}`);
       if (detail.replyContent) {
         clearPollTimer();
         pendingMessageIdRef.current = null;
@@ -109,11 +114,18 @@ const ChatWidget = () => {
         try {
           localStorage.setItem(
             STORAGE_REPLIED_KEY,
-            JSON.stringify({ id: messageId, replyContent: detail.replyContent, repliedAt: detail.repliedAt }),
+            JSON.stringify({ id: messageId, replyContent: detail.replyContent, repliedAt: detail.repliedAt, time: Date.now() }),
           );
           localStorage.removeItem(STORAGE_KEY);
-        } catch {
-          // ignore storage errors
+          logger.info('[ChatWidget] saved reply to localStorage, cleared message id');
+
+          const replyMsg = makeBotMsg(`【人工客服】${detail.replyContent}`, 'human');
+          const currentHistory = JSON.parse(localStorage.getItem(STORAGE_HISTORY_KEY) || '[]') as ChatMessage[];
+          const updatedHistory = [...currentHistory, replyMsg];
+          localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(updatedHistory));
+          logger.info(`[ChatWidget] chat_history updated with reply, total=${updatedHistory.length}`);
+        } catch (storageErr) {
+          logger.error('[ChatWidget] save reply to localStorage FAILED:', String(storageErr));
         }
         return;
       }
@@ -123,12 +135,14 @@ const ChatWidget = () => {
 
     pollCountRef.current += 1;
     if (pollCountRef.current >= POLL_MAX_COUNT) {
+      logger.info('[ChatWidget] poll max count reached, stopping');
       clearPollTimer();
       setPolling(false);
     }
   }, [clearPollTimer, showHumanReply]);
 
   const startPolling = useCallback((messageId: string) => {
+    logger.info(`[ChatWidget] polling started for id: ${messageId}`);
     clearPollTimer();
     pendingMessageIdRef.current = messageId;
     pollCountRef.current = 0;
@@ -139,10 +153,35 @@ const ChatWidget = () => {
     }, POLL_INTERVAL_MS);
   }, [clearPollTimer, pollReply]);
 
+  const restoreHistoryFromStorage = useCallback((): ChatMessage[] => {
+    try {
+      const historyRaw = localStorage.getItem(STORAGE_HISTORY_KEY);
+      if (historyRaw) {
+        const parsed = JSON.parse(historyRaw) as ChatMessage[];
+        logger.info(`[ChatWidget] restored ${parsed.length} messages from chat_history`);
+        return parsed;
+      }
+      logger.info('[ChatWidget] no chat_history in localStorage');
+    } catch (err) {
+      logger.error('[ChatWidget] restore chat_history failed:', String(err));
+    }
+    return [];
+  }, []);
+
   const restoreFromStorage = useCallback(() => {
     try {
       const pendingId = localStorage.getItem(STORAGE_KEY);
       const repliedRaw = localStorage.getItem(STORAGE_REPLIED_KEY);
+
+      logger.info(`[ChatWidget] found message id in localStorage: ${pendingId || 'none'}`);
+      if (!pendingId) {
+        logger.info('[ChatWidget] no message id in localStorage');
+      }
+
+      const history = restoreHistoryFromStorage();
+      if (history.length > 0) {
+        setMessages(history);
+      }
 
       if (pendingId) {
         logger.info(`[ChatWidget] restore pending message: ${pendingId}`);
@@ -158,7 +197,7 @@ const ChatWidget = () => {
     } catch (err) {
       logger.error('[ChatWidget] restoreFromStorage failed:', String(err));
     }
-  }, [showHumanReply, startPolling]);
+  }, [showHumanReply, startPolling, restoreHistoryFromStorage]);
 
   useEffect(() => {
     if (open) {
@@ -254,9 +293,18 @@ const ChatWidget = () => {
 
       try {
         localStorage.setItem(STORAGE_KEY, result.id);
-        logger.info(`[ChatWidget] saved to localStorage ${STORAGE_KEY}=${result.id}`);
+        logger.info(`[ChatWidget] saved message id: ${result.id}`);
       } catch (storageErr) {
-        logger.error('[ChatWidget] localStorage save FAILED:', String(storageErr));
+        logger.error('[ChatWidget] save message id FAILED:', String(storageErr));
+      }
+
+      try {
+        const userMsgs = messages.filter((m: ChatMessage) => m.type === 'user');
+        const allMsgs = [...messages, makeBotMsg('感谢您的留言，我们的工作人员会尽快回复您。')];
+        localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(allMsgs));
+        logger.info(`[ChatWidget] saved chat_history: ${allMsgs.length} messages (${userMsgs.length} user)`);
+      } catch (storageErr) {
+        logger.error('[ChatWidget] save chat_history FAILED:', String(storageErr));
       }
 
       startPolling(result.id);

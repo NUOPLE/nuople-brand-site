@@ -69,13 +69,14 @@ export function getDatabase(): ReturnType<typeof drizzle> {
     ssl = { rejectUnauthorized: false };
   }
 
-  const connectTimeoutSec = parseInt(process.env.PG_CONNECT_TIMEOUT || '', 10) || 20;
-  const maxConns = parseInt(process.env.PG_MAX || '', 10) || 5;
-  const idleTimeoutSec = parseInt(process.env.PG_IDLE_TIMEOUT || '', 10) || 30;
-  const maxRetries = parseInt(process.env.PG_CONNECT_RETRIES || '', 10) || 3;
+  const connectTimeoutSec = parseInt(process.env.PG_CONNECT_TIMEOUT || '', 10) || 15;
+  const maxConns = parseInt(process.env.PG_MAX || '', 10) || 10;
+  const idleTimeoutSec = parseInt(process.env.PG_IDLE_TIMEOUT || '', 10) || 20;
+  const maxRetries = parseInt(process.env.PG_CONNECT_RETRIES || '', 10) || 2;
   const retryDelayMs = parseInt(process.env.PG_CONNECT_RETRY_DELAY_MS || '', 10) || 1000;
+  const statementTimeoutMs = parseInt(process.env.PG_STATEMENT_TIMEOUT_MS || '', 10) || 10000;
 
-  rawLog(`[DB] Creating postgres client (ssl=${Boolean(ssl)}, max=${maxConns}, idle_timeout=${idleTimeoutSec}s, connect_timeout=${connectTimeoutSec}s, retries=${maxRetries})`);
+  rawLog(`[DB] Creating postgres client (ssl=${Boolean(ssl)}, max=${maxConns}, idle_timeout=${idleTimeoutSec}s, connect_timeout=${connectTimeoutSec}s, retries=${maxRetries}, statement_timeout=${statementTimeoutMs}ms)`);
   const initStart = Date.now();
 
   const sql = postgres(databaseUrl, {
@@ -86,6 +87,7 @@ export function getDatabase(): ReturnType<typeof drizzle> {
     prepare: false,
     connection: {
       application_name: 'nuople-cms',
+      statement_timeout: statementTimeoutMs,
     },
     onnotice: (notice) => {
       rawLog(`[DB] NOTICE: ${notice.message}`);
@@ -124,6 +126,10 @@ export function getDatabase(): ReturnType<typeof drizzle> {
 
     sqlAny.events.on('notice', (notice: { message: string }) => {
       rawLog(`[DB] EVENT NOTICE: ${notice.message}`);
+    });
+
+    sqlAny.events.on('wait', (info: unknown) => {
+      rawLog(`[DB-POOL-WAIT] Connection waiting in queue: ${JSON.stringify(info)}`);
     });
   } else {
     rawLog('[DB] sql.events not available in this postgres version');
@@ -195,12 +201,12 @@ export function getDatabaseInitError(): Error | null {
 export function getDatabasePoolStats(): string {
   if (!rawSqlInstance) return 'pool-not-initialized';
   const sqlAny = rawSqlInstance as unknown as {
-    connections?: { size?: number; idle?: number; waiting?: number };
+    connections?: { size?: number; idle?: number; waiting?: number; busy?: number };
     size?: number;
   };
   const conns = sqlAny.connections;
   if (conns) {
-    return `total=${conns.size ?? '?'} idle=${conns.idle ?? '?'} waiting=${conns.waiting ?? '?'}`;
+    return `total=${conns.size ?? '?'} busy=${conns.busy ?? '?'} idle=${conns.idle ?? '?'} waiting=${conns.waiting ?? '?'}`;
   }
   if (typeof sqlAny.size === 'number') {
     return `size=${sqlAny.size}`;

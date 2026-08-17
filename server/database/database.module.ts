@@ -17,26 +17,35 @@ const rawError = globalThis.console.error.bind(globalThis.console);
   providers: [
     {
       provide: DRIZZLE_DATABASE,
-      useFactory: async () => {
-        const db = getDatabase();
-        const initPromise = (db as unknown as {
-          $initPromise?: Promise<void>;
-        }).$initPromise;
-        if (initPromise) {
-          rawLog('[DatabaseModule] Waiting for DB connection init...');
-          try {
-            await initPromise;
-            rawLog('[DatabaseModule] DB connection verified, provider ready');
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            Logger.error(
-              `Database connection failed: ${msg}`,
-              'DatabaseModule',
-            );
-            rawError(`[DatabaseModule] DB connection FAILED: ${msg}`);
-            throw new Error(`Database connection failed: ${msg}`);
-          }
-        }
+       useFactory: async () => {
+         rawLog('[DatabaseModule] useFactory: creating DB provider...');
+         const db = getDatabase();
+         const initPromise = (db as unknown as {
+           $initPromise?: Promise<void>;
+         }).$initPromise;
+         if (initPromise) {
+           rawLog('[DatabaseModule] Waiting for DB connection init (timeout=30s)...');
+           const timeoutMs = 30000;
+           const timeoutPromise = new Promise<never>((_, reject) => {
+             setTimeout(() => {
+               reject(new Error(`Database init timed out after ${timeoutMs}ms`));
+             }, timeoutMs);
+           });
+           try {
+             await Promise.race([initPromise, timeoutPromise]);
+             rawLog('[DatabaseModule] DB connection verified, provider ready');
+           } catch (err) {
+             const msg = err instanceof Error ? err.message : String(err);
+             Logger.error(
+               `Database connection failed: ${msg}`,
+               'DatabaseModule',
+             );
+             rawError(`[DatabaseModule] DB connection FAILED: ${msg}`);
+             rawError('[DatabaseModule] Continuing in degraded mode (provider still returned)');
+             // Don't throw — let the app start in degraded mode
+             // Queries will fail individually but the app won't crash at boot
+           }
+         }
 
         rawLog('[DatabaseModule] Starting background auto-migrations (fire-and-forget)...');
         let migrationDone = false;
