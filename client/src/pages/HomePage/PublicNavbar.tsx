@@ -1,9 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
-import { getPublicSiteSettings } from '@client/src/api/public';
-import type { PublicSiteSettings } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
 
 const navLinks = [
   { href: '#work', label: 'Work' },
@@ -15,7 +12,6 @@ const navLinks = [
 const PublicNavbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [settings, setSettings] = useState<PublicSiteSettings | null>(null);
   const location = useLocation();
 
   useEffect(() => {
@@ -24,18 +20,6 @@ const PublicNavbar = () => {
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const data = await getPublicSiteSettings();
-        setSettings(data);
-      } catch (err) {
-        logger.error('fetch site settings failed', String(err));
-      }
-    };
-    fetchSettings();
   }, []);
 
   useEffect(() => {
@@ -53,7 +37,7 @@ const PublicNavbar = () => {
     }
   };
 
-  const brandTitle = settings?.siteTitle || '诺普品牌';
+  const brandTitle = '诺普品牌';
   const brandSubtitle = 'Design & Art';
 
   return (

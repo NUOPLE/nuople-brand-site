@@ -17,7 +17,7 @@ const common_1 = require("@nestjs/common");
 const connection_1 = require("../../database/connection");
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
-const STATS_TIMEOUT_MS = 15000;
+const STATS_TIMEOUT_MS = 5000;
 const logger = new common_1.Logger('DashboardService');
 function withTimeout(promise, ms, label) {
     return new Promise((resolve, reject) => {

@@ -56,34 +56,34 @@ let PublicController = class PublicController {
         return this.publicService.getKeywordRules();
     }
     async submitMessage(req, body) {
-        rawLog(`[PublicController] POST /api/public/messages rawBody=${JSON.stringify(req.body)} name="${body?.name}" email="${body?.email}" content_len=${body?.content?.length ?? 0}`);
+        rawLog(`[MSG_DEBUG] Controller POST /api/public/messages ENTER bodyKeys=${Object.keys(body || {}).join(',')} name="${body?.name}" email="${body?.email}"`);
         if (!body?.name?.trim()) {
-            rawError(`[PublicController] Validation FAILED: name is empty, body keys=${Object.keys(body || {})}`);
+            rawError(`[MSG_DEBUG] Controller: name is empty -> 400`);
             throw new common_1.BadRequestException('请输入姓名');
         }
         if (!body?.email?.trim()) {
-            rawError(`[PublicController] Validation FAILED: email is empty`);
+            rawError(`[MSG_DEBUG] Controller: email is empty -> 400`);
             throw new common_1.BadRequestException('请输入邮箱');
         }
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(body.email)) {
-            rawError(`[PublicController] Validation FAILED: invalid email format "${body.email}"`);
+            rawError(`[MSG_DEBUG] Controller: invalid email "${body.email}" -> 400`);
             throw new common_1.BadRequestException('邮箱格式不正确');
         }
         if (!body?.content?.trim()) {
-            rawError(`[PublicController] Validation FAILED: content is empty`);
+            rawError(`[MSG_DEBUG] Controller: content is empty -> 400`);
             throw new common_1.BadRequestException('请输入留言内容');
         }
         try {
             const result = await this.publicService.submitMessage(body);
-            rawLog(`[PublicController] Message submitted successfully: id=${result.id}`);
+            rawLog(`[MSG_DEBUG] Controller: success id=${result.id}`);
             return result;
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            rawError(`[PublicController] submitMessage FAILED: ${msg}`);
+            rawError(`[MSG_DEBUG] Controller: service threw -> ${msg}`);
             if (err instanceof Error && err.stack) {
-                rawError(`[PublicController] Stack: ${err.stack}`);
+                rawError(`[MSG_DEBUG] Controller: stack: ${err.stack}`);
             }
             throw err;
         }

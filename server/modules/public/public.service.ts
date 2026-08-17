@@ -401,66 +401,108 @@ export class PublicService {
     dto: PublicMessageSubmitRequest,
   ): Promise<PublicMessageSubmitResponse> {
     rawLog(
-      `[Public] submitMessage STEP1 enter name=${dto.name} email=${dto.email} content_len=${dto.content.length}`,
+      `[MSG_DEBUG] submitMessage ENTER name="${dto.name}" email="${dto.email}" contentLen=${dto.content.length}`,
     );
+    rawLog(
+      `[MSG_DEBUG] submitMessage dto keys: ${Object.keys(dto).join(',')}`,
+    );
+
+    let rows: Array<{ id: string }> = [];
+
     try {
-      const rawSql = (this.db as unknown as { $client: ReturnType<typeof import('postgres')> }).$client;
+      rawLog('[MSG_DEBUG] STEP1: getting rawSql client from drizzle $client');
+      const dbAny = this.db as unknown as Record<string, unknown>;
+      rawLog(`[MSG_DEBUG] STEP1.5: db keys: ${Object.keys(dbAny).join(',')}`);
+      const rawSql = dbAny.$client as ReturnType<typeof import('postgres')> | undefined;
+
       if (!rawSql) {
-        rawError('[Public] submitMessage FAILED: raw sql client ($client) not available');
+        rawError('[MSG_DEBUG] FAILED: $client is undefined/null');
         throw new BadRequestException('留言提交失败，请稍后重试');
       }
-      rawLog('[Public] submitMessage STEP2 got rawSqlClient via drizzle $client, executing INSERT...');
+      rawLog(`[MSG_DEBUG] STEP2: rawSql client type=${typeof rawSql}`);
+      rawLog(`[MSG_DEBUG] STEP2.1: rawSql is function=${typeof rawSql === 'function'}`);
 
-      const result = await withTimeout(
-        (async () => {
-          rawLog('[Public] submitMessage STEP3 inside withTimeout, sending SQL...');
-          rawLog(`[Public] submitMessage SQL_PREVIEW: INSERT INTO message (name, email, content, is_read) VALUES ('${dto.name}', '${dto.email}', '${dto.content.slice(0, 30)}...', FALSE) RETURNING id`);
-          const rows = await rawSql`
-            INSERT INTO message (name, email, content, is_read)
-            VALUES (${dto.name}, ${dto.email}, ${dto.content}, FALSE)
-            RETURNING id, name, email, content, is_read, _created_at
-          `;
-          rawLog(`[Public] submitMessage STEP4 INSERT returned, rows=${rows.length}`);
-          if (rows.length > 0) {
-            const r = rows[0] as unknown as Record<string, unknown>;
-            rawLog(`[Public] submitMessage STEP4 detail: id=${r.id}, name=${r.name}, _created_at=${r._created_at}`);
-          }
-          return rows as unknown as Array<{ id: string }>;
-        })(),
-        DB_TIMEOUT_MS,
-        'submit-message-raw',
+      rawLog('[MSG_DEBUG] STEP3: executing INSERT via postgres tagged template');
+      rawLog(
+        `[MSG_DEBUG] SQL: INSERT INTO message (name, email, content, is_read) VALUES (?, ?, ?, FALSE) RETURNING id`,
+      );
+      rawLog(
+        `[MSG_DEBUG] PARAMS: name="${dto.name}" email="${dto.email}" contentLen=${dto.content.length}`,
       );
 
-      rawLog(`[Public] submitMessage STEP5 done: id=${result[0]!.id}`);
-      return { success: true, id: result[0]!.id };
+      try {
+        rows = (await rawSql`
+          INSERT INTO message (name, email, content, is_read)
+          VALUES (${dto.name}, ${dto.email}, ${dto.content}, FALSE)
+          RETURNING id
+        `) as unknown as Array<{ id: string }>;
+        rawLog(`[MSG_DEBUG] STEP4: INSERT SUCCESS, rows.length=${rows.length}`);
+        if (rows.length > 0) {
+          rawLog(`[MSG_DEBUG] STEP4.1: inserted id=${rows[0]!.id}`);
+        }
+      } catch (sqlErr: unknown) {
+        rawError(`[MSG_DEBUG] STEP4: tagged template INSERT FAILED`);
+        rawError(`[MSG_DEBUG] error type: ${typeof sqlErr}`);
+        rawError(`[MSG_DEBUG] error constructor: ${(sqlErr as Error)?.constructor?.name}`);
+        rawError(`[MSG_DEBUG] error message: ${(sqlErr as Error)?.message}`);
+        rawError(`[MSG_DEBUG] error stack: ${(sqlErr as Error)?.stack}`);
+        const sqlErrAny = sqlErr as Record<string, unknown>;
+        for (const key of Object.keys(sqlErrAny)) {
+          const val = sqlErrAny[key];
+          const valStr =
+            typeof val === 'object' && val !== null
+              ? JSON.stringify(val).slice(0, 500)
+              : String(val);
+          rawError(`[MSG_DEBUG] error prop.${key}: ${valStr}`);
+        }
+
+        rawLog('[MSG_DEBUG] STEP5: trying sql.unsafe as fallback...');
+        try {
+          const unsafeResult = await (rawSql as unknown as { unsafe: (q: string, params: unknown[]) => Promise<unknown> }).unsafe(
+            'INSERT INTO message (name, email, content, is_read) VALUES ($1, $2, $3, FALSE) RETURNING id',
+            [dto.name, dto.email, dto.content],
+          );
+          rows = unsafeResult as Array<{ id: string }>;
+          rawLog(`[MSG_DEBUG] STEP5.1: sql.unsafe SUCCESS, rows.length=${rows.length}`);
+        } catch (unsafeErr: unknown) {
+          rawError(`[MSG_DEBUG] STEP5.2: sql.unsafe also FAILED`);
+          rawError(`[MSG_DEBUG] unsafe error message: ${(unsafeErr as Error)?.message}`);
+          const unsafeAny = unsafeErr as Record<string, unknown>;
+          for (const key of Object.keys(unsafeAny)) {
+            const val = unsafeAny[key];
+            const valStr =
+              typeof val === 'object' && val !== null
+                ? JSON.stringify(val).slice(0, 500)
+                : String(val);
+            rawError(`[MSG_DEBUG] unsafe error prop.${key}: ${valStr}`);
+          }
+          throw sqlErr;
+        }
+      }
+
+      rawLog(`[MSG_DEBUG] STEP6: submitMessage done, id=${rows[0]?.id}`);
+      return { success: true, id: rows[0]!.id };
     } catch (err) {
-      rawError('[Public] submitMessage CATCH err=');
+      rawError('[MSG_DEBUG] TOP-LEVEL CATCH in submitMessage');
       rawError(err);
       const msg = err instanceof Error ? err.message : String(err);
-      rawError(`[Public] submitMessage FAILED: ${msg}`);
+      rawError(`[MSG_DEBUG] final error msg: ${msg}`);
       if (err instanceof Error && err.stack) {
-        rawError(`[Public] submitMessage Stack: ${err.stack}`);
+        rawError(`[MSG_DEBUG] final stack: ${err.stack}`);
       }
       let current: unknown = err;
-      for (let depth = 0; depth < 4 && current && typeof current === 'object'; depth += 1) {
-        const { code, severity, detail, schema, table, column, constraint, cause } =
-          current as {
-            code?: unknown;
-            severity?: unknown;
-            detail?: unknown;
-            schema?: unknown;
-            table?: unknown;
-            column?: unknown;
-            constraint?: unknown;
-            cause?: unknown;
-          };
+      for (let depth = 0; depth < 6 && current && typeof current === 'object'; depth += 1) {
+        const {
+          code, severity, detail, schema, table, column, constraint, position,
+          routine, where_: whereField, file, line, hint, cause,
+        } = current as Record<string, unknown>;
         if (
           code !== undefined ||
           detail !== undefined ||
           table !== undefined
         ) {
           rawError(
-            `[Public] submitMessage PostgresError depth=${depth}: code=${code}, severity=${severity}, detail=${detail}, schema=${schema}, table=${table}, column=${column}, constraint=${constraint}`,
+            `[MSG_DEBUG] PostgresError depth=${depth}: code=${code}, severity=${severity}, detail=${detail}, schema=${schema}, table=${table}, column=${column}, constraint=${constraint}, position=${position}, routine=${routine}, file=${file}, line=${line}, hint=${hint}`,
           );
         }
         current = cause;
