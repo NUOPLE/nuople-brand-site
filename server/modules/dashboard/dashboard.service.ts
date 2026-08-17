@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DRIZZLE_DATABASE, logPoolStats } from '../../database/connection';
+import { getCache, setCache, delCachePattern } from '../../common/cache';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import type { DashboardStats, RecentMessage, CategoryStat } from '@shared/api.interface';
@@ -8,6 +9,8 @@ const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 
 const STATS_TIMEOUT_MS = 10000;
+const STATS_CACHE_TTL = 30;
+const STATS_CACHE_KEY = 'dashboard:stats';
 
 const logger = new Logger('DashboardService');
 
@@ -52,6 +55,12 @@ export class DashboardService {
   async getStats(): Promise<DashboardStats> {
     rawLog('[DashboardService] getStats STEP1 enter');
     logPoolStats('dashboard-before');
+
+    const cached = getCache<DashboardStats>(STATS_CACHE_KEY);
+    if (cached) {
+      rawLog('[DashboardService] getStats returning cached result');
+      return cached;
+    }
     try {
       const sql = this.rawSql;
       const result = await withTimeout(
@@ -106,6 +115,7 @@ export class DashboardService {
       );
        rawLog('[DashboardService] getStats STEP4 success');
        logPoolStats('dashboard-after');
+       setCache(STATS_CACHE_KEY, result, STATS_CACHE_TTL);
        return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -135,5 +145,9 @@ export class DashboardService {
        logPoolStats('dashboard-failed');
        return EMPTY_STATS;
     }
+  }
+
+  clearCache(): void {
+    delCachePattern('dashboard:');
   }
 }

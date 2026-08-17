@@ -15,9 +15,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardService = void 0;
 const common_1 = require("@nestjs/common");
 const connection_1 = require("../../database/connection");
+const cache_1 = require("../../common/cache");
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 const STATS_TIMEOUT_MS = 10000;
+const STATS_CACHE_TTL = 30;
+const STATS_CACHE_KEY = 'dashboard:stats';
 const logger = new common_1.Logger('DashboardService');
 function withTimeout(promise, ms, label) {
     return new Promise((resolve, reject) => {
@@ -56,6 +59,11 @@ let DashboardService = class DashboardService {
     async getStats() {
         rawLog('[DashboardService] getStats STEP1 enter');
         (0, connection_1.logPoolStats)('dashboard-before');
+        const cached = (0, cache_1.getCache)(STATS_CACHE_KEY);
+        if (cached) {
+            rawLog('[DashboardService] getStats returning cached result');
+            return cached;
+        }
         try {
             const sql = this.rawSql;
             const result = await withTimeout((async () => {
@@ -96,6 +104,7 @@ let DashboardService = class DashboardService {
             })(), STATS_TIMEOUT_MS, 'dashboard-stats');
             rawLog('[DashboardService] getStats STEP4 success');
             (0, connection_1.logPoolStats)('dashboard-after');
+            (0, cache_1.setCache)(STATS_CACHE_KEY, result, STATS_CACHE_TTL);
             return result;
         }
         catch (err) {
@@ -117,6 +126,9 @@ let DashboardService = class DashboardService {
             (0, connection_1.logPoolStats)('dashboard-failed');
             return EMPTY_STATS;
         }
+    }
+    clearCache() {
+        (0, cache_1.delCachePattern)('dashboard:');
     }
 };
 exports.DashboardService = DashboardService;

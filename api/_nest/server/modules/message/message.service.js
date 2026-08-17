@@ -15,7 +15,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MessageService = void 0;
 const common_1 = require("@nestjs/common");
 const connection_1 = require("../../database/connection");
+const cache_1 = require("../../common/cache");
 const DB_TIMEOUT_MS = 10000;
+const LIST_CACHE_TTL = 10;
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 function withTimeout(promise, ms, label) {
@@ -46,6 +48,12 @@ let MessageService = class MessageService {
     async getList(page, pageSize, status) {
         rawLog(`[MessageService.getList] STEP1 enter page=${page} pageSize=${pageSize} status=${status}`);
         (0, connection_1.logPoolStats)('getList-before');
+        const cacheKey = `message:list:${page}:${pageSize}:${status}`;
+        const cached = (0, cache_1.getCache)(cacheKey);
+        if (cached) {
+            rawLog(`[MessageService.getList] cache hit for ${cacheKey}`);
+            return cached;
+        }
         const whereSql = status === 'unread'
             ? this.sql `WHERE is_read = FALSE`
             : status === 'read'
@@ -88,6 +96,7 @@ let MessageService = class MessageService {
             }));
             const total = Number(totalResult[0]?.count ?? 0);
             const totalUnread = Number(unreadResult[0]?.count ?? 0);
+            (0, cache_1.setCache)(cacheKey, { items, total, totalUnread }, LIST_CACHE_TTL);
             return { items, total, totalUnread };
         }
         catch (err) {
@@ -145,6 +154,7 @@ let MessageService = class MessageService {
             if (updated.length === 0) {
                 throw new common_1.NotFoundException('留言不存在');
             }
+            (0, cache_1.delCachePattern)('message:');
         }
         catch (err) {
             if (err instanceof common_1.NotFoundException)
@@ -171,6 +181,7 @@ let MessageService = class MessageService {
             if (updated.length === 0) {
                 throw new common_1.NotFoundException('留言不存在');
             }
+            (0, cache_1.delCachePattern)('message:');
             return { repliedAt: new Date(updated[0].replied_at).toISOString() };
         }
         catch (err) {
@@ -194,6 +205,7 @@ let MessageService = class MessageService {
             if (deleted.length === 0) {
                 throw new common_1.NotFoundException('留言不存在');
             }
+            (0, cache_1.delCachePattern)('message:');
         }
         catch (err) {
             if (err instanceof common_1.NotFoundException)

@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Send,
+  RefreshCw,
 } from 'lucide-react';
 
 import { Button } from '@client/src/components/ui/button';
@@ -39,9 +40,11 @@ import {
 import type {
   Message,
   MessageListItem,
+  MessageListResponse,
   MessageStatusFilter,
 } from '@shared/api.interface';
 import { logger } from '@lark-apaas/client-toolkit/logger';
+import { getPageCache, setPageCache, clearPageCache } from '@client/src/utils/page-cache';
 
 const PAGE_SIZE = 10;
 
@@ -76,7 +79,19 @@ const MessagesPage = () => {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const fetchList = useCallback(async () => {
+  const cacheKey = `admin:messages:list:${page}:${status}`;
+
+  const fetchList = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getPageCache<MessageListResponse>(cacheKey);
+      if (cached) {
+        setItems(cached.items);
+        setTotal(cached.total);
+        setTotalUnread(cached.totalUnread);
+        setLoading(false);
+        return;
+      }
+    }
     setLoading(true);
     try {
       const res = await getMessageList({
@@ -87,12 +102,19 @@ const MessagesPage = () => {
       setItems(res.items);
       setTotal(res.total);
       setTotalUnread(res.totalUnread);
+      setPageCache(cacheKey, res);
     } catch (err) {
       logger.error('获取留言列表失败', String(err));
+      toast.error('加载失败，请刷新重试');
     } finally {
       setLoading(false);
     }
-  }, [page, status]);
+  }, [page, status, cacheKey]);
+
+  const handleRefresh = useCallback(() => {
+    clearPageCache(cacheKey);
+    fetchList(true);
+  }, [cacheKey, fetchList]);
 
   useEffect(() => {
     fetchList();
@@ -178,6 +200,7 @@ const MessagesPage = () => {
       }
       setReplyText('');
       toast.success('回复成功');
+      clearPageCache(cacheKey);
     } catch (err) {
       logger.error('回复失败', String(err));
     } finally {
@@ -197,7 +220,8 @@ const MessagesPage = () => {
         setSelectedMessage(null);
       }
       toast.success('删除成功');
-      await fetchList();
+      clearPageCache(cacheKey);
+      await fetchList(true);
     } catch (err) {
       logger.error('删除失败', String(err));
     } finally {
@@ -237,6 +261,14 @@ const MessagesPage = () => {
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border rounded-sm hover:bg-accent transition-colors disabled:opacity-50 mr-2"
+          >
+            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
           {statusTabs.map((tab) => (
             <button
               key={tab.key}

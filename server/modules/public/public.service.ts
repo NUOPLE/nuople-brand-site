@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, BadRequestException, NotFoundException } fr
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { DRIZZLE_DATABASE } from '../../database/connection';
+import { getCache, setCache, delCachePattern } from '../../common/cache';
 
 import type {
   PublicWorkListItem,
@@ -22,6 +23,10 @@ import type {
 } from '@shared/api.interface';
 
 const DB_TIMEOUT_MS = 15000;
+const WORKS_CACHE_TTL = 30;
+const KEYWORD_CACHE_TTL = 60;
+const SETTINGS_CACHE_TTL = 60;
+const FEATURED_CACHE_TTL = 30;
 const logger = new Logger('PublicService');
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
@@ -111,6 +116,10 @@ export class PublicService {
     const t0 = Date.now();
     rawLog(`[Public] getFeaturedWorks STEP1 enter limit=${limit}`);
 
+    const cacheKey = `public:works:featured:${limit}`;
+    const cached = getCache<PublicFeaturedWorksResponse>(cacheKey);
+    if (cached) return cached;
+
     try {
       const sql = this.rawSql;
       rawLog('[Public] getFeaturedWorks STEP2 before SQL');
@@ -130,7 +139,7 @@ export class PublicService {
         `[Public] getFeaturedWorks done: ${rows.length} items in ${Date.now() - t0}ms`,
       );
 
-      return {
+      const result: PublicFeaturedWorksResponse = {
         items: rows.map((row: any) => ({
           id: row.id,
           title: row.title,
@@ -142,12 +151,14 @@ export class PublicService {
           tags: row.tags as string[],
         })),
       };
+      setCache(cacheKey, result, FEATURED_CACHE_TTL);
+      return result;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      rawError(`[Public] getFeaturedWorks FAILED: ${msg}`);
-      logger.error(`getFeaturedWorks failed: ${msg}`);
-      return { items: [] };
-    }
+        const msg = err instanceof Error ? err.message : String(err);
+        rawError(`[Public] getFeaturedWorks FAILED: ${msg}`);
+        logger.error(`getFeaturedWorks failed: ${msg}`);
+        return { items: [] };
+      }
   }
 
   async getWorkList(params: {
@@ -158,6 +169,12 @@ export class PublicService {
     const { page, pageSize, category } = params;
     const t0 = Date.now();
     rawLog(`[Public] getWorkList STEP1 enter page=${page} pageSize=${pageSize} category=${category || 'all'}`);
+
+    const cacheKey = `public:works:list:${page}:${pageSize}:${category || 'all'}`;
+    const cached = getCache<PublicWorkListResponse>(cacheKey);
+    if (cached) {
+      return cached;
+    }
 
     let total = 0;
     let items: Array<{
@@ -227,7 +244,7 @@ export class PublicService {
       `[Public] getWorkList done: ${items.length} items, total=${total} in ${Date.now() - t0}ms`,
     );
 
-    return {
+    const result: PublicWorkListResponse = {
       items: items.map((row) => ({
         id: row.id,
         title: row.title,
@@ -240,6 +257,8 @@ export class PublicService {
       })),
       total,
     };
+    setCache(cacheKey, result, WORKS_CACHE_TTL);
+    return result;
   }
 
   async getWorkById(id: string): Promise<PublicWorkDetail | null> {
@@ -323,6 +342,10 @@ export class PublicService {
     const t0 = Date.now();
     rawLog('[Public] getSiteSettings STEP1 enter');
 
+    const cacheKey = 'public:site-settings';
+    const cached = getCache<PublicSiteSettings>(cacheKey);
+    if (cached) return cached;
+
     try {
       const sql = this.rawSql;
       rawLog('[Public] getSiteSettings STEP2 before SQL');
@@ -352,7 +375,7 @@ export class PublicService {
         }
       };
 
-      return {
+      const result: PublicSiteSettings = {
         siteTitle: map.get('site_title') || DEFAULT_SETTINGS.siteTitle,
         companyName: map.get('company_name') || DEFAULT_SETTINGS.companyName,
         logoImage: map.get('logo_image') || DEFAULT_SETTINGS.logoImage,
@@ -367,6 +390,8 @@ export class PublicService {
         contact: parseJson<ContactInfo>('contact', DEFAULT_SETTINGS.contact),
         footer: parseJson<FooterInfo>('footer', DEFAULT_SETTINGS.footer),
       };
+      setCache(cacheKey, result, SETTINGS_CACHE_TTL);
+      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[Public] getSiteSettings FAILED: ${msg}`);
@@ -377,6 +402,9 @@ export class PublicService {
 
   async getKeywordRules(): Promise<PublicKeywordRulesResponse> {
     rawLog('[Public] getKeywordRules STEP1 enter');
+    const cacheKey = 'public:keyword-rules';
+    const cached = getCache<PublicKeywordRulesResponse>(cacheKey);
+    if (cached) return cached;
     try {
       const sql = this.rawSql;
       rawLog('[Public] getKeywordRules STEP2 before SQL');
@@ -392,13 +420,15 @@ export class PublicService {
       rawLog(`[Public] getKeywordRules STEP3 after SQL: ${rows.length} rows`);
       rawLog(`[Public] getKeywordRules done: ${rows.length} rows`);
 
-      return {
+      const result: PublicKeywordRulesResponse = {
         items: (rows as any[]).map((row) => ({
           id: row.id,
           keywords: row.keywords as string[],
           replyContent: row.reply_content,
         })),
       };
+      setCache(cacheKey, result, KEYWORD_CACHE_TTL);
+      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[Public] getKeywordRules FAILED: ${msg}`);
@@ -523,6 +553,7 @@ export class PublicService {
       }
 
       rawLog(`[MSG_DEBUG] STEP6: submitMessage done, id=${rows[0]?.id}`);
+      delCachePattern('message:');
       return { success: true, id: rows[0]!.id };
     } catch (err) {
       rawError('[MSG_DEBUG] TOP-LEVEL CATCH in submitMessage');

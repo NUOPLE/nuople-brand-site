@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, logPoolStats } from '../../database/connection';
+import { getCache, setCache, delCachePattern } from '../../common/cache';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import type {
@@ -10,6 +11,7 @@ import type {
 } from '@shared/api.interface';
 
 const DB_TIMEOUT_MS = 10000;
+const LIST_CACHE_TTL = 10;
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 
@@ -48,6 +50,13 @@ export class MessageService {
   ): Promise<MessageListResponse> {
     rawLog(`[MessageService.getList] STEP1 enter page=${page} pageSize=${pageSize} status=${status}`);
     logPoolStats('getList-before');
+
+    const cacheKey = `message:list:${page}:${pageSize}:${status}`;
+    const cached = getCache<MessageListResponse>(cacheKey);
+    if (cached) {
+      rawLog(`[MessageService.getList] cache hit for ${cacheKey}`);
+      return cached;
+    }
 
     const whereSql = status === 'unread'
       ? this.sql`WHERE is_read = FALSE`
@@ -100,6 +109,7 @@ export class MessageService {
       const total = Number(totalResult[0]?.count ?? 0);
       const totalUnread = Number(unreadResult[0]?.count ?? 0);
 
+      setCache(cacheKey, { items, total, totalUnread }, LIST_CACHE_TTL);
       return { items, total, totalUnread };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -169,6 +179,7 @@ export class MessageService {
       if (updated.length === 0) {
         throw new NotFoundException('留言不存在');
       }
+      delCachePattern('message:');
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
       const msg = err instanceof Error ? err.message : String(err);
@@ -201,6 +212,7 @@ export class MessageService {
         throw new NotFoundException('留言不存在');
       }
 
+      delCachePattern('message:');
       return { repliedAt: new Date((updated[0] as any).replied_at).toISOString() };
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
@@ -229,6 +241,7 @@ export class MessageService {
       if (deleted.length === 0) {
         throw new NotFoundException('留言不存在');
       }
+      delCachePattern('message:');
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
       const msg = err instanceof Error ? err.message : String(err);

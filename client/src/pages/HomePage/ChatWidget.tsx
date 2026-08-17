@@ -72,16 +72,16 @@ const ChatWidget = () => {
 
   const userMessageCount = messages.filter((m) => m.type === 'user').length;
 
-  const matchReply = (text: string): string => {
+  const matchReply = (text: string): { reply: string; matched: boolean } => {
     const lowerText = text.toLowerCase();
     for (const rule of rules) {
       for (const keyword of rule.keywords) {
         if (lowerText.includes(keyword.toLowerCase())) {
-          return rule.replyContent;
+          return { reply: rule.replyContent, matched: true };
         }
       }
     }
-    return '感谢您的留言，我们的工作人员会尽快回复您。';
+    return { reply: '感谢您的留言，我们的工作人员会尽快回复您。', matched: false };
   };
 
   const clearPollTimer = useCallback(() => {
@@ -172,6 +172,7 @@ const ChatWidget = () => {
   const handleSend = () => {
     const text = input.trim();
     if (!text || sending) return;
+    logger.info(`[ChatWidget] handleSend: user input="${text}" rulesCount=${rules.length}`);
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -185,6 +186,7 @@ const ChatWidget = () => {
 
     const newUserCount = userMessageCount + 1;
     const hitHumanKeyword = containsHumanKeyword(text);
+    logger.info(`[ChatWidget] newUserCount=${newUserCount} hitHumanKeyword=${hitHumanKeyword} threshold=${TRANSFER_TRIGGER_COUNT}`);
 
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
@@ -198,10 +200,11 @@ const ChatWidget = () => {
           makeBotMsg('好的，正在为您转接人工客服，请点击下方按钮提交您的问题。'),
         );
       } else {
-        const reply = matchReply(text);
-        botMessages.push(makeBotMsg(reply, 'keyword'));
+        const { reply, matched } = matchReply(text);
+        logger.info(`[ChatWidget] keyword match result: matched=${matched} replyPreview=${reply.slice(0, 30)}`);
+        botMessages.push(makeBotMsg(reply, matched ? 'keyword' : undefined));
 
-        if (newUserCount === TRANSFER_TRIGGER_COUNT) {
+        if (!matched && newUserCount >= TRANSFER_TRIGGER_COUNT) {
           botMessages.push(
             makeBotMsg('您的问题可能需要人工解答，是否需要转人工客服？'),
           );
@@ -211,7 +214,10 @@ const ChatWidget = () => {
       setMessages((prev) => [...prev, ...botMessages]);
       setSending(false);
 
-      if (hitHumanKeyword || newUserCount >= TRANSFER_TRIGGER_COUNT) {
+      const shouldShowTransfer =
+        hitHumanKeyword || (newUserCount >= TRANSFER_TRIGGER_COUNT);
+      logger.info(`[ChatWidget] shouldShowTransferButton=${shouldShowTransfer}`);
+      if (shouldShowTransfer) {
         setShowTransferButton(true);
       }
     }, 600);
@@ -219,7 +225,7 @@ const ChatWidget = () => {
 
   const handleTransferToHuman = async () => {
     const userMessages = messages.filter((m) => m.type === 'user');
-    logger.info('[ChatWidget] handleTransferToHuman called, userMessages count:', String(userMessages.length));
+    logger.info(`[ChatWidget] handleTransferToHuman CLICKED, userMessages=${userMessages.length}, transferring=${transferring}`);
 
     if (userMessages.length === 0) {
       setMessages((prev) => [...prev, makeBotMsg('请先输入您的问题，再点击「转人工」，我们的工作人员会尽快回复您。')]);
@@ -238,26 +244,28 @@ const ChatWidget = () => {
       email: 'chat@nuople.cn',
       content,
     };
-    logger.info('[ChatWidget] submit message payload:', JSON.stringify(payload));
+    logger.info('[ChatWidget] submit payload:', JSON.stringify(payload));
 
     try {
       const result = await submitPublicMessage(payload);
-      logger.info('[ChatWidget] submit success:', JSON.stringify(result));
+      logger.info(`[ChatWidget] submit SUCCESS, id=${result.id}`);
       setMessages((prev) => [...prev, makeBotMsg('感谢您的留言，我们的工作人员会尽快回复您。')]);
       setShowTransferButton(false);
 
       try {
         localStorage.setItem(STORAGE_KEY, result.id);
-      } catch {
-        // ignore storage errors
+        logger.info(`[ChatWidget] saved to localStorage ${STORAGE_KEY}=${result.id}`);
+      } catch (storageErr) {
+        logger.error('[ChatWidget] localStorage save FAILED:', String(storageErr));
       }
 
       startPolling(result.id);
     } catch (err: unknown) {
-      logger.error('[ChatWidget] submit FAILED:', String(err));
-      logger.error('[ChatWidget] error message:', String(err instanceof Error ? err.message : String(err)));
-      logger.error('[ChatWidget] error stack:', String(err instanceof Error ? err.stack : 'no stack'));
-      logger.error('transfer to human failed', String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error('[ChatWidget] submit FAILED:', msg);
+      if (err instanceof Error && err.stack) {
+        logger.error('[ChatWidget] error stack:', err.stack);
+      }
       setMessages((prev) => [...prev, makeBotMsg('留言提交失败，请稍后重试。')]);
     } finally {
       setTransferring(false);

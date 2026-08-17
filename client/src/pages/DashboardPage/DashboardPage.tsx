@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Image,
@@ -8,10 +8,15 @@ import {
   Plus,
   Eye,
   Settings,
+  RefreshCw,
 } from 'lucide-react';
 
 import { axiosForBackend } from '@/api';
 import type { DashboardStats } from '@shared/api.interface';
+import { getPageCache, setPageCache, clearPageCache } from '@client/src/utils/page-cache';
+import { logger } from '@lark-apaas/client-toolkit/logger';
+
+const CACHE_KEY = 'admin:dashboard:stats';
 
 const categoryLabelMap: Record<string, string> = {
   logo: 'LOGO设计',
@@ -23,17 +28,35 @@ const DashboardPage = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const res = await axiosForBackend.get<DashboardStats>('/api/dashboard/stats');
-        setStats(res.data);
-      } finally {
+  const loadStats = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getPageCache<DashboardStats>(CACHE_KEY);
+      if (cached) {
+        setStats(cached);
         setLoading(false);
+        return;
       }
-    };
-    fetchStats();
+    }
+    setLoading(true);
+    try {
+      const res = await axiosForBackend.get<DashboardStats>('/api/dashboard/stats');
+      setStats(res.data);
+      setPageCache(CACHE_KEY, res.data);
+    } catch (err) {
+      logger.error('Dashboard fetch failed:', String(err));
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  const handleRefresh = useCallback(() => {
+    clearPageCache(CACHE_KEY);
+    loadStats(true);
+  }, [loadStats]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -117,6 +140,21 @@ const DashboardPage = () => {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">数据概览</h1>
+          <p className="text-sm text-muted-foreground mt-1">欢迎回来，以下是网站运营数据</p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border rounded-sm hover:bg-accent transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+          刷新
+        </button>
+      </div>
+
       {/* 数据概览卡片行 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((card) => (

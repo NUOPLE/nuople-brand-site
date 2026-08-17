@@ -5,4 +5,5 @@ export declare class DashboardService {
     constructor(db: PostgresJsDatabase);
     private get rawSql();
     getStats(): Promise<DashboardStats>;
+    clearCache(): void;
 }

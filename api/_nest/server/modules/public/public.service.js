@@ -15,7 +15,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PublicService = void 0;
 const common_1 = require("@nestjs/common");
 const connection_1 = require("../../database/connection");
+const cache_1 = require("../../common/cache");
 const DB_TIMEOUT_MS = 15000;
+const WORKS_CACHE_TTL = 30;
+const KEYWORD_CACHE_TTL = 60;
+const SETTINGS_CACHE_TTL = 60;
+const FEATURED_CACHE_TTL = 30;
 const logger = new common_1.Logger('PublicService');
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
@@ -93,6 +98,10 @@ let PublicService = class PublicService {
     async getFeaturedWorks(limit = 5) {
         const t0 = Date.now();
         rawLog(`[Public] getFeaturedWorks STEP1 enter limit=${limit}`);
+        const cacheKey = `public:works:featured:${limit}`;
+        const cached = (0, cache_1.getCache)(cacheKey);
+        if (cached)
+            return cached;
         try {
             const sql = this.rawSql;
             rawLog('[Public] getFeaturedWorks STEP2 before SQL');
@@ -104,7 +113,7 @@ let PublicService = class PublicService {
         `, DB_TIMEOUT_MS, 'get-featured-works');
             rawLog(`[Public] getFeaturedWorks STEP3 after SQL: ${rows.length} rows`);
             rawLog(`[Public] getFeaturedWorks done: ${rows.length} items in ${Date.now() - t0}ms`);
-            return {
+            const result = {
                 items: rows.map((row) => ({
                     id: row.id,
                     title: row.title,
@@ -116,6 +125,8 @@ let PublicService = class PublicService {
                     tags: row.tags,
                 })),
             };
+            (0, cache_1.setCache)(cacheKey, result, FEATURED_CACHE_TTL);
+            return result;
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -128,6 +139,11 @@ let PublicService = class PublicService {
         const { page, pageSize, category } = params;
         const t0 = Date.now();
         rawLog(`[Public] getWorkList STEP1 enter page=${page} pageSize=${pageSize} category=${category || 'all'}`);
+        const cacheKey = `public:works:list:${page}:${pageSize}:${category || 'all'}`;
+        const cached = (0, cache_1.getCache)(cacheKey);
+        if (cached) {
+            return cached;
+        }
         let total = 0;
         let items = [];
         try {
@@ -176,7 +192,7 @@ let PublicService = class PublicService {
             return { items: [], total: 0 };
         }
         rawLog(`[Public] getWorkList done: ${items.length} items, total=${total} in ${Date.now() - t0}ms`);
-        return {
+        const result = {
             items: items.map((row) => ({
                 id: row.id,
                 title: row.title,
@@ -189,6 +205,8 @@ let PublicService = class PublicService {
             })),
             total,
         };
+        (0, cache_1.setCache)(cacheKey, result, WORKS_CACHE_TTL);
+        return result;
     }
     async getWorkById(id) {
         rawLog(`[Public] getWorkById STEP1 enter id=${id}`);
@@ -268,6 +286,10 @@ let PublicService = class PublicService {
     async getSiteSettings() {
         const t0 = Date.now();
         rawLog('[Public] getSiteSettings STEP1 enter');
+        const cacheKey = 'public:site-settings';
+        const cached = (0, cache_1.getCache)(cacheKey);
+        if (cached)
+            return cached;
         try {
             const sql = this.rawSql;
             rawLog('[Public] getSiteSettings STEP2 before SQL');
@@ -289,7 +311,7 @@ let PublicService = class PublicService {
                     return fallback;
                 }
             };
-            return {
+            const result = {
                 siteTitle: map.get('site_title') || DEFAULT_SETTINGS.siteTitle,
                 companyName: map.get('company_name') || DEFAULT_SETTINGS.companyName,
                 logoImage: map.get('logo_image') || DEFAULT_SETTINGS.logoImage,
@@ -301,6 +323,8 @@ let PublicService = class PublicService {
                 contact: parseJson('contact', DEFAULT_SETTINGS.contact),
                 footer: parseJson('footer', DEFAULT_SETTINGS.footer),
             };
+            (0, cache_1.setCache)(cacheKey, result, SETTINGS_CACHE_TTL);
+            return result;
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -311,6 +335,10 @@ let PublicService = class PublicService {
     }
     async getKeywordRules() {
         rawLog('[Public] getKeywordRules STEP1 enter');
+        const cacheKey = 'public:keyword-rules';
+        const cached = (0, cache_1.getCache)(cacheKey);
+        if (cached)
+            return cached;
         try {
             const sql = this.rawSql;
             rawLog('[Public] getKeywordRules STEP2 before SQL');
@@ -321,13 +349,15 @@ let PublicService = class PublicService {
         `, DB_TIMEOUT_MS, 'get-keyword-rules');
             rawLog(`[Public] getKeywordRules STEP3 after SQL: ${rows.length} rows`);
             rawLog(`[Public] getKeywordRules done: ${rows.length} rows`);
-            return {
+            const result = {
                 items: rows.map((row) => ({
                     id: row.id,
                     keywords: row.keywords,
                     replyContent: row.reply_content,
                 })),
             };
+            (0, cache_1.setCache)(cacheKey, result, KEYWORD_CACHE_TTL);
+            return result;
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -428,6 +458,7 @@ let PublicService = class PublicService {
                 }
             }
             rawLog(`[MSG_DEBUG] STEP6: submitMessage done, id=${rows[0]?.id}`);
+            (0, cache_1.delCachePattern)('message:');
             return { success: true, id: rows[0].id };
         }
         catch (err) {
