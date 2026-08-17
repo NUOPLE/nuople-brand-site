@@ -19,8 +19,8 @@ interface ChatMessage {
 }
 
 const TRANSFER_TRIGGER_COUNT = 5;
-const POLL_INTERVAL_MS = 5000;
-const POLL_MAX_COUNT = 12;
+const POLL_INTERVAL_MS = 2000;
+const POLL_MAX_COUNT = 30;
 const STORAGE_KEY = 'chat_message_id';
 const STORAGE_REPLIED_KEY = 'chat_message_replied';
 
@@ -48,6 +48,7 @@ const ChatWidget = () => {
   const [sending, setSending] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const [showTransferButton, setShowTransferButton] = useState(false);
+  const [polling, setPolling] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
@@ -103,6 +104,7 @@ const ChatWidget = () => {
       if (detail.replyContent) {
         clearPollTimer();
         pendingMessageIdRef.current = null;
+        setPolling(false);
         showHumanReply(detail.replyContent);
         try {
           localStorage.setItem(
@@ -113,6 +115,7 @@ const ChatWidget = () => {
         } catch {
           // ignore storage errors
         }
+        return;
       }
     } catch (err: unknown) {
       logger.error('[ChatWidget] pollReply FAILED:', String(err));
@@ -121,6 +124,7 @@ const ChatWidget = () => {
     pollCountRef.current += 1;
     if (pollCountRef.current >= POLL_MAX_COUNT) {
       clearPollTimer();
+      setPolling(false);
     }
   }, [clearPollTimer, showHumanReply]);
 
@@ -128,6 +132,7 @@ const ChatWidget = () => {
     clearPollTimer();
     pendingMessageIdRef.current = messageId;
     pollCountRef.current = 0;
+    setPolling(true);
     pollReply(messageId);
     pollTimerRef.current = setInterval(() => {
       pollReply(messageId);
@@ -307,7 +312,7 @@ const ChatWidget = () => {
                   key={msg.id}
                   className={`flex ${
                     msg.type === 'user' ? 'justify-end' : 'justify-start'
-                  }`}
+                  } ${msg.source === 'human' ? 'animate-fade-in' : ''}`}
                 >
                   <div
                     className={`max-w-[80%] px-3 py-2 text-sm ${
@@ -320,6 +325,13 @@ const ChatWidget = () => {
                   </div>
                 </div>
               ))
+            )}
+            {polling && (
+              <div className="flex justify-start animate-fade-in">
+                <div className="max-w-[80%] px-3 py-2 text-xs text-black/50 bg-white/60 border border-dashed border-black/10">
+                  正在等待人工客服回复...
+                </div>
+              </div>
             )}
             <div ref={messagesEndRef} />
           </div>
