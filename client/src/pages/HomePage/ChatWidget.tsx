@@ -24,6 +24,7 @@ const POLL_MAX_COUNT = 30;
 const STORAGE_KEY = 'chat_message_id';
 const STORAGE_REPLIED_KEY = 'chat_message_replied';
 const STORAGE_HISTORY_KEY = 'chat_history';
+const STORAGE_UNMATCHED_KEY = 'chat_unmatched_count';
 
 const containsHumanKeyword = (text: string): boolean => {
   const lower = text.toLowerCase();
@@ -49,6 +50,7 @@ const ChatWidget = () => {
   const [sending, setSending] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const [showTransferButton, setShowTransferButton] = useState(false);
+  const [unmatchedCount, setUnmatchedCount] = useState(0);
   const [polling, setPolling] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -78,11 +80,13 @@ const ChatWidget = () => {
     for (const rule of rules) {
       for (const keyword of rule.keywords) {
         if (lowerText.includes(keyword.toLowerCase())) {
+          logger.info(`[ChatWidget] keyword HIT: "${keyword}" -> reply="${rule.replyContent.slice(0, 30)}..."`);
           return { reply: rule.replyContent, matched: true };
         }
       }
     }
-    return { reply: '感谢您的留言，我们的工作人员会尽快回复您。', matched: false };
+    logger.info('[ChatWidget] keyword MISS: no rule matched user input');
+    return { reply: '抱歉，我暂时无法回答您的问题。您可以尝试输入其他关键词，或点击下方「转人工客服」按钮，我们的工作人员会为您解答。', matched: false };
   };
 
   const clearPollTimer = useCallback(() => {
@@ -189,15 +193,28 @@ const ChatWidget = () => {
         return;
       }
 
-      if (repliedRaw) {
-        const parsed = JSON.parse(repliedRaw) as { id: string; replyContent: string; repliedAt?: string };
-        logger.info(`[ChatWidget] restore replied message: ${parsed.id}`);
-        showHumanReply(parsed.replyContent);
-      }
-    } catch (err) {
-      logger.error('[ChatWidget] restoreFromStorage failed:', String(err));
-    }
-  }, [showHumanReply, startPolling, restoreHistoryFromStorage]);
+       if (repliedRaw) {
+         const parsed = JSON.parse(repliedRaw) as { id: string; replyContent: string; repliedAt?: string };
+         logger.info(`[ChatWidget] restore replied message: ${parsed.id}`);
+         showHumanReply(parsed.replyContent);
+       }
+
+       try {
+         const unmatchedRaw = localStorage.getItem(STORAGE_UNMATCHED_KEY);
+         if (unmatchedRaw) {
+           const saved = parseInt(unmatchedRaw, 10);
+           if (!Number.isNaN(saved)) {
+             setUnmatchedCount(saved);
+             logger.info(`[ChatWidget] restored unmatchedCount=${saved}`);
+           }
+         }
+       } catch {
+         // ignore
+       }
+     } catch (err) {
+       logger.error('[ChatWidget] restoreFromStorage failed:', String(err));
+     }
+   }, [showHumanReply, startPolling, restoreHistoryFromStorage]);
 
   useEffect(() => {
     if (open) {
@@ -232,39 +249,55 @@ const ChatWidget = () => {
     setSending(true);
 
     setTimeout(() => {
-      const botMessages: ChatMessage[] = [];
+     const botMessages: ChatMessage[] = [];
+     let matched = false;
 
-      if (hitHumanKeyword) {
-        botMessages.push(
-          makeBotMsg('好的，正在为您转接人工客服，请点击下方按钮提交您的问题。'),
-        );
-      } else {
-        const { reply, matched } = matchReply(text);
-        logger.info(`[ChatWidget] keyword match result: matched=${matched} replyPreview=${reply.slice(0, 30)}`);
-        botMessages.push(makeBotMsg(reply, matched ? 'keyword' : undefined));
+     if (hitHumanKeyword) {
+       matched = false;
+       botMessages.push(
+         makeBotMsg('好的，正在为您转接人工客服，请点击下方按钮提交您的问题。'),
+       );
+     } else {
+       const { reply, matched: isMatched } = matchReply(text);
+       matched = isMatched;
+       logger.info(`[ChatWidget] keyword match result: matched=${matched} replyPreview=${reply.slice(0, 30)}`);
+       botMessages.push(makeBotMsg(reply, matched ? 'keyword' : undefined));
 
-        if (!matched && newUserCount >= TRANSFER_TRIGGER_COUNT) {
-          botMessages.push(
-            makeBotMsg('您的问题可能需要人工解答，是否需要转人工客服？'),
-          );
-        }
-      }
+       if (!matched && unmatchedCount + 1 >= TRANSFER_TRIGGER_COUNT) {
+         botMessages.push(
+           makeBotMsg('您的问题可能需要人工解答，是否需要转人工客服？点击下方按钮即可提交您的问题。'),
+         );
+       }
+     }
 
       setMessages((prev) => [...prev, ...botMessages]);
       setSending(false);
 
-      const shouldShowTransfer =
-        hitHumanKeyword || (newUserCount >= TRANSFER_TRIGGER_COUNT);
-      logger.info(`[ChatWidget] shouldShowTransferButton=${shouldShowTransfer}`);
-      if (shouldShowTransfer) {
-        setShowTransferButton(true);
-      }
+       const newUnmatched = hitHumanKeyword
+         ? unmatchedCount
+         : matched
+         ? 0
+         : unmatchedCount + 1;
+       logger.info(`[ChatWidget] unmatchedCount was=${unmatchedCount} now=${newUnmatched} threshold=${TRANSFER_TRIGGER_COUNT}`);
+       setUnmatchedCount(newUnmatched);
+       try {
+         localStorage.setItem(STORAGE_UNMATCHED_KEY, String(newUnmatched));
+       } catch {
+         // ignore
+       }
+
+       const shouldShowTransfer =
+         hitHumanKeyword || (newUnmatched >= TRANSFER_TRIGGER_COUNT);
+       logger.info(`[ChatWidget] shouldShowTransferButton=${shouldShowTransfer} (hitHuman=${hitHumanKeyword}, unmatched=${newUnmatched}/${TRANSFER_TRIGGER_COUNT})`);
+       if (shouldShowTransfer) {
+         setShowTransferButton(true);
+       }
     }, 600);
   };
 
   const handleTransferToHuman = async () => {
     const userMessages = messages.filter((m) => m.type === 'user');
-    logger.info(`[ChatWidget] handleTransferToHuman CLICKED, userMessages=${userMessages.length}, transferring=${transferring}`);
+    logger.info(`[ChatWidget] [TRANSFER] button CLICKED, userMessages=${userMessages.length}, transferring=${transferring}`);
 
     if (userMessages.length === 0) {
       setMessages((prev) => [...prev, makeBotMsg('请先输入您的问题，再点击「转人工」，我们的工作人员会尽快回复您。')]);
@@ -283,11 +316,11 @@ const ChatWidget = () => {
       email: 'chat@nuople.cn',
       content,
     };
-    logger.info('[ChatWidget] submit payload:', JSON.stringify(payload));
+    logger.info(`[ChatWidget] [TRANSFER] before API call: POST /api/public/messages`);
 
     try {
       const result = await submitPublicMessage(payload);
-      logger.info(`[ChatWidget] submit SUCCESS, id=${result.id}`);
+      logger.info(`[ChatWidget] [TRANSFER] API SUCCESS, id=${result.id}`);
       setMessages((prev) => [...prev, makeBotMsg('感谢您的留言，我们的工作人员会尽快回复您。')]);
       setShowTransferButton(false);
 
@@ -308,17 +341,18 @@ const ChatWidget = () => {
       }
 
       startPolling(result.id);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error('[ChatWidget] submit FAILED:', msg);
-      if (err instanceof Error && err.stack) {
-        logger.error('[ChatWidget] error stack:', err.stack);
-      }
-      setMessages((prev) => [...prev, makeBotMsg('留言提交失败，请稍后重试。')]);
-    } finally {
-      setTransferring(false);
-    }
-  };
+     } catch (err: unknown) {
+       const msg = err instanceof Error ? err.message : String(err);
+       logger.error('[ChatWidget] [TRANSFER] API FAILED:', msg);
+       if (err instanceof Error && err.stack) {
+         logger.error('[ChatWidget] [TRANSFER] error stack:', err.stack);
+       }
+       setMessages((prev) => [...prev, makeBotMsg('留言提交失败，请稍后重试。')]);
+     } finally {
+       setTransferring(false);
+       logger.info('[ChatWidget] [TRANSFER] done, transferring=false');
+     }
+   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

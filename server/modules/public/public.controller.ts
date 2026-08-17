@@ -114,6 +114,9 @@ export class PublicController {
     @Body() body: PublicMessageSubmitRequest,
   ): Promise<PublicMessageSubmitResponse> {
     rawLog(
+      `[PublicController] submitMessage called, bodyKeys=${Object.keys(body || {}).join(',')} name="${body?.name}" email="${body?.email}"`,
+    );
+    rawLog(
       `[MSG_DEBUG] Controller POST /api/public/messages ENTER bodyKeys=${Object.keys(body || {}).join(',')} name="${body?.name}" email="${body?.email}"`,
     );
     if (!body?.name?.trim()) {

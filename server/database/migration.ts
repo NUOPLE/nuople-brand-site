@@ -20,6 +20,9 @@ const rawError = globalThis.console.error.bind(globalThis.console);
 const DEFAULT_ADMIN_USERNAME = 'admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin123';
 
+let migrationDone = false;
+let migrationInProgress = false;
+
 const CREATE_TABLES_SQL = sql.raw(`
   CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -100,11 +103,23 @@ const TABLE_NAMES = [
 ];
 
 export async function runMigrations(db: unknown): Promise<void> {
+  rawLog('[Migration] start');
+  if (migrationDone) {
+    rawLog('[Migration] skipped (already completed)');
+    return;
+  }
+  if (migrationInProgress) {
+    rawLog('[Migration] skipped (already in progress)');
+    return;
+  }
+  migrationInProgress = true;
   rawLog('[DBMigration] Running CREATE TABLE IF NOT EXISTS migrations...');
   try {
     await asDb(db).execute(CREATE_TABLES_SQL);
     rawLog('[DBMigration] Tables created/verified successfully');
     logger.log('All tables verified (CREATE TABLE IF NOT EXISTS)');
+    migrationDone = true;
+    rawLog('[Migration] completed');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     rawError(`[DBMigration] FAILED: ${msg}`);
