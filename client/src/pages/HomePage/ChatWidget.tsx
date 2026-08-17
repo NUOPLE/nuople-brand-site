@@ -52,10 +52,14 @@ const ChatWidget = () => {
   const [showTransferButton, setShowTransferButton] = useState(false);
   const [unmatchedCount, setUnmatchedCount] = useState(0);
   const [polling, setPolling] = useState(false);
+  const [showNewMsgHint, setShowNewMsgHint] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
   const pendingMessageIdRef = useRef<string | null>(null);
+  const shownReplyMsgIdRef = useRef<string | null>(null);
+  const isAtBottomRef = useRef(true);
 
   useEffect(() => {
     const fetchRules = async () => {
@@ -70,8 +74,29 @@ const ChatWidget = () => {
   }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setShowNewMsgHint(false);
+    } else {
+      setShowNewMsgHint(true);
+    }
   }, [messages]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isAtBottomRef.current = distanceFromBottom < 20;
+    if (isAtBottomRef.current) {
+      setShowNewMsgHint(false);
+    }
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setShowNewMsgHint(false);
+    isAtBottomRef.current = true;
+  }, []);
 
   const userMessageCount = messages.filter((m) => m.type === 'user').length;
 
@@ -97,7 +122,13 @@ const ChatWidget = () => {
     pollCountRef.current = 0;
   }, []);
 
-  const showHumanReply = useCallback((replyContent: string) => {
+  const showHumanReply = useCallback((replyContent: string, replyId?: string) => {
+    const dedupKey = replyId || replyContent;
+    if (shownReplyMsgIdRef.current === dedupKey) {
+      logger.info('[ChatWidget] human reply DUPLICATE skipped:', dedupKey.slice(0, 30));
+      return;
+    }
+    shownReplyMsgIdRef.current = dedupKey;
     const replyMsg = makeBotMsg(`【人工客服】${replyContent}`, 'human');
     setMessages((prev) => [...prev, replyMsg]);
     logger.info('[ChatWidget] human reply shown:', replyContent.slice(0, 50));
@@ -110,29 +141,37 @@ const ChatWidget = () => {
       logger.info(`[ChatWidget] API response: ${JSON.stringify(detail)}`);
       const hasReply = Boolean(detail.replyContent);
       logger.info(`[ChatWidget] poll result: hasReply=${hasReply}`);
-      if (detail.replyContent) {
-        clearPollTimer();
-        pendingMessageIdRef.current = null;
-        setPolling(false);
-        showHumanReply(detail.replyContent);
-        try {
-          localStorage.setItem(
-            STORAGE_REPLIED_KEY,
-            JSON.stringify({ id: messageId, replyContent: detail.replyContent, repliedAt: detail.repliedAt, time: Date.now() }),
-          );
-          localStorage.removeItem(STORAGE_KEY);
-          logger.info('[ChatWidget] saved reply to localStorage, cleared message id');
+       if (detail.replyContent) {
+         logger.info('[ChatWidget] pollReply: reply found, stopping poll');
+         clearPollTimer();
+         pendingMessageIdRef.current = null;
+         setPolling(false);
+         showHumanReply(detail.replyContent, messageId);
+         try {
+           localStorage.setItem(
+             STORAGE_REPLIED_KEY,
+             JSON.stringify({ id: messageId, replyContent: detail.replyContent, repliedAt: detail.repliedAt, time: Date.now() }),
+           );
+           localStorage.removeItem(STORAGE_KEY);
+           logger.info('[ChatWidget] saved reply to localStorage, cleared message id');
 
-          const replyMsg = makeBotMsg(`【人工客服】${detail.replyContent}`, 'human');
-          const currentHistory = JSON.parse(localStorage.getItem(STORAGE_HISTORY_KEY) || '[]') as ChatMessage[];
-          const updatedHistory = [...currentHistory, replyMsg];
-          localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(updatedHistory));
-          logger.info(`[ChatWidget] chat_history updated with reply, total=${updatedHistory.length}`);
-        } catch (storageErr) {
-          logger.error('[ChatWidget] save reply to localStorage FAILED:', String(storageErr));
-        }
-        return;
-      }
+           setMessages((prev) => {
+             const replyMsg = makeBotMsg(`【人工客服】${detail.replyContent}`, 'human');
+             const hasHumanReply = prev.some((m: ChatMessage) => m.source === 'human');
+             if (hasHumanReply) {
+               logger.info('[ChatWidget] chat_history already has human reply, skip append');
+               return prev;
+             }
+             const updatedHistory = [...prev, replyMsg];
+             localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(updatedHistory));
+             logger.info(`[ChatWidget] chat_history updated with reply, total=${updatedHistory.length}`);
+             return updatedHistory;
+           });
+         } catch (storageErr) {
+           logger.error('[ChatWidget] save reply to localStorage FAILED:', String(storageErr));
+         }
+         return;
+       }
     } catch (err: unknown) {
       logger.error('[ChatWidget] pollReply FAILED:', String(err));
     }
@@ -146,6 +185,13 @@ const ChatWidget = () => {
   }, [clearPollTimer, showHumanReply]);
 
   const startPolling = useCallback((messageId: string) => {
+    if (pollTimerRef.current) {
+      logger.warn('[ChatWidget] startPolling: existing timer found, clearing first');
+    }
+    if (pendingMessageIdRef.current === messageId) {
+      logger.info(`[ChatWidget] startPolling: already polling ${messageId}, skip`);
+      return;
+    }
     logger.info(`[ChatWidget] polling started for id: ${messageId}`);
     clearPollTimer();
     pendingMessageIdRef.current = messageId;
@@ -183,45 +229,77 @@ const ChatWidget = () => {
       }
 
       const history = restoreHistoryFromStorage();
-      if (history.length > 0) {
-        setMessages(history);
+      const hasHumanReplyInHistory = history.some((m) => m.source === 'human');
+
+      let repliedInfo: { id: string; replyContent: string; repliedAt?: string } | null = null;
+      if (repliedRaw) {
+        try {
+          repliedInfo = JSON.parse(repliedRaw) as { id: string; replyContent: string; repliedAt?: string };
+          logger.info(`[ChatWidget] restore replied info: id=${repliedInfo.id}`);
+        } catch {
+          repliedInfo = null;
+        }
       }
 
-      if (pendingId) {
+      let finalHistory = history;
+
+      if (repliedInfo && !hasHumanReplyInHistory) {
+        const replyMsg: ChatMessage = {
+          id: `b-restored-${repliedInfo.id}`,
+          type: 'bot',
+          content: `【人工客服】${repliedInfo.replyContent}`,
+          time: repliedInfo.repliedAt ? new Date(repliedInfo.repliedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '',
+          source: 'human',
+        };
+        finalHistory = [...finalHistory, replyMsg];
+        logger.info('[ChatWidget] appended restored human reply to history');
+      }
+
+      if (finalHistory.length > 0) {
+        setMessages(finalHistory);
+      }
+
+      if (repliedInfo) {
+        shownReplyMsgIdRef.current = repliedInfo.id;
+        logger.info(`[ChatWidget] set shownReplyMsgIdRef=${repliedInfo.id}`);
+      }
+
+      if (pendingId && !repliedInfo) {
         logger.info(`[ChatWidget] restore pending message: ${pendingId}`);
         startPolling(pendingId);
-        return;
+      } else if (pendingId && repliedInfo) {
+        logger.info('[ChatWidget] already replied, skip polling on restore');
+        localStorage.removeItem(STORAGE_KEY);
       }
 
-       if (repliedRaw) {
-         const parsed = JSON.parse(repliedRaw) as { id: string; replyContent: string; repliedAt?: string };
-         logger.info(`[ChatWidget] restore replied message: ${parsed.id}`);
-         showHumanReply(parsed.replyContent);
-       }
-
-       try {
-         const unmatchedRaw = localStorage.getItem(STORAGE_UNMATCHED_KEY);
-         if (unmatchedRaw) {
-           const saved = parseInt(unmatchedRaw, 10);
-           if (!Number.isNaN(saved)) {
-             setUnmatchedCount(saved);
-             logger.info(`[ChatWidget] restored unmatchedCount=${saved}`);
-           }
-         }
-       } catch {
-         // ignore
-       }
-     } catch (err) {
-       logger.error('[ChatWidget] restoreFromStorage failed:', String(err));
-     }
-   }, [showHumanReply, startPolling, restoreHistoryFromStorage]);
+      try {
+        const unmatchedRaw = localStorage.getItem(STORAGE_UNMATCHED_KEY);
+        if (unmatchedRaw) {
+          const saved = parseInt(unmatchedRaw, 10);
+          if (!Number.isNaN(saved)) {
+            setUnmatchedCount(saved);
+            logger.info(`[ChatWidget] restored unmatchedCount=${saved}`);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    } catch (err) {
+      logger.error('[ChatWidget] restoreFromStorage failed:', String(err));
+    }
+  }, [restoreHistoryFromStorage, startPolling]);
 
   useEffect(() => {
     if (open) {
+      shownReplyMsgIdRef.current = null;
+      isAtBottomRef.current = true;
+      setShowNewMsgHint(false);
       restoreFromStorage();
     }
     return () => {
       clearPollTimer();
+      pendingMessageIdRef.current = null;
+      shownReplyMsgIdRef.current = null;
     };
   }, [open, clearPollTimer, restoreFromStorage]);
 
@@ -386,7 +464,15 @@ const ChatWidget = () => {
             </button>
           </div>
 
-          <div className="flex-1 h-80 overflow-y-auto p-4 bg-gray-50 space-y-3">
+           <div ref={scrollContainerRef} onScroll={handleScroll} className="relative flex-1 h-80 overflow-y-auto p-4 bg-gray-50 space-y-3">
+             {showNewMsgHint && (
+               <button
+                 onClick={scrollToBottom}
+                 className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1 text-xs bg-black/80 text-white rounded-full shadow-md hover:bg-black"
+               >
+                 有新消息 ↓
+               </button>
+             )}
             {messages.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-sm text-black/50">
