@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { DRIZZLE_DATABASE } from '../../database/connection';
+import { DRIZZLE_DATABASE, logPoolStats } from '../../database/connection';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import type {
@@ -9,7 +9,7 @@ import type {
   MessageStatusFilter,
 } from '@shared/api.interface';
 
-const DB_TIMEOUT_MS = 5000;
+const DB_TIMEOUT_MS = 10000;
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 
@@ -47,6 +47,7 @@ export class MessageService {
     status: MessageStatusFilter,
   ): Promise<MessageListResponse> {
     rawLog(`[MessageService.getList] STEP1 enter page=${page} pageSize=${pageSize} status=${status}`);
+    logPoolStats('getList-before');
 
     const whereSql = status === 'unread'
       ? this.sql`WHERE is_read = FALSE`
@@ -82,8 +83,9 @@ export class MessageService {
         DB_TIMEOUT_MS,
         'message-list',
       );
-      const elapsed = Date.now() - start;
-      rawLog(`[MessageService.getList] STEP3 done in ${elapsed}ms items=${itemsResult.length} total=${totalResult[0]?.count} unread=${unreadResult[0]?.count}`);
+       const elapsed = Date.now() - start;
+       rawLog(`[MessageService.getList] STEP3 done in ${elapsed}ms items=${itemsResult.length} total=${totalResult[0]?.count} unread=${unreadResult[0]?.count}`);
+       logPoolStats('getList-after');
 
       const items: MessageListItem[] = itemsResult.map((row: any) => ({
         id: row.id,
@@ -102,6 +104,7 @@ export class MessageService {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[MessageService.getList] FAILED after ${Date.now() - start}ms: ${msg}`);
+      logPoolStats('getList-failed');
       return { items: [], total: 0, totalUnread: 0 };
     }
   }

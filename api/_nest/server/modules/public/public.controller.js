@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PublicController = void 0;
 const common_1 = require("@nestjs/common");
+const connection_1 = require("../../database/connection");
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 const public_service_1 = require("./public.service");
@@ -21,6 +22,24 @@ let PublicController = class PublicController {
     publicService;
     constructor(publicService) {
         this.publicService = publicService;
+    }
+    async health() {
+        rawLog('[PublicController] health check');
+        let dbOk = false;
+        try {
+            await this.publicService.healthCheck();
+            dbOk = true;
+        }
+        catch (err) {
+            rawError(`[PublicController] health db check failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        (0, connection_1.logPoolStats)('health');
+        return {
+            status: dbOk ? 'ok' : 'degraded',
+            db: dbOk,
+            pool: dbOk ? 'connected' : 'failed',
+            timestamp: new Date().toISOString(),
+        };
     }
     async getFeaturedWorks(limit = '5') {
         const limitNum = Math.min(parseInt(limit, 10) || 5, 20);
@@ -94,6 +113,12 @@ let PublicController = class PublicController {
     }
 };
 exports.PublicController = PublicController;
+__decorate([
+    (0, common_1.Get)('health'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], PublicController.prototype, "health", null);
 __decorate([
     (0, common_1.Get)('works/featured'),
     __param(0, (0, common_1.Query)('limit')),

@@ -82,6 +82,14 @@ let PublicService = class PublicService {
     get rawSql() {
         return this.db.$client;
     }
+    async healthCheck() {
+        const sql = this.rawSql;
+        const rows = await sql `SELECT 1 AS ok`;
+        if (!rows || rows.length === 0) {
+            throw new Error('DB health check returned no rows');
+        }
+        return { ok: true };
+    }
     async getFeaturedWorks(limit = 5) {
         const t0 = Date.now();
         rawLog(`[Public] getFeaturedWorks STEP1 enter limit=${limit}`);

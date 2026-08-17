@@ -69,16 +69,18 @@ export function getDatabase(): ReturnType<typeof drizzle> {
     ssl = { rejectUnauthorized: false };
   }
 
-  const connectTimeoutSec = parseInt(process.env.PG_CONNECT_TIMEOUT || '', 10) || 15;
+  const connectTimeoutSec = parseInt(process.env.PG_CONNECT_TIMEOUT || '', 10) || 20;
+  const maxConns = parseInt(process.env.PG_MAX || '', 10) || 5;
+  const idleTimeoutSec = parseInt(process.env.PG_IDLE_TIMEOUT || '', 10) || 30;
   const maxRetries = parseInt(process.env.PG_CONNECT_RETRIES || '', 10) || 3;
   const retryDelayMs = parseInt(process.env.PG_CONNECT_RETRY_DELAY_MS || '', 10) || 1000;
 
-  rawLog(`[DB] Creating postgres client (ssl=${Boolean(ssl)}, connect_timeout=${connectTimeoutSec}s, retries=${maxRetries})`);
+  rawLog(`[DB] Creating postgres client (ssl=${Boolean(ssl)}, max=${maxConns}, idle_timeout=${idleTimeoutSec}s, connect_timeout=${connectTimeoutSec}s, retries=${maxRetries})`);
   const initStart = Date.now();
 
   const sql = postgres(databaseUrl, {
-    max: 3,
-    idle_timeout: 15,
+    max: maxConns,
+    idle_timeout: idleTimeoutSec,
     connect_timeout: connectTimeoutSec,
     ssl,
     prepare: false,
@@ -188,6 +190,26 @@ export function isDatabaseFailed(): boolean {
 
 export function getDatabaseInitError(): Error | null {
   return initError;
+}
+
+export function getDatabasePoolStats(): string {
+  if (!rawSqlInstance) return 'pool-not-initialized';
+  const sqlAny = rawSqlInstance as unknown as {
+    connections?: { size?: number; idle?: number; waiting?: number };
+    size?: number;
+  };
+  const conns = sqlAny.connections;
+  if (conns) {
+    return `total=${conns.size ?? '?'} idle=${conns.idle ?? '?'} waiting=${conns.waiting ?? '?'}`;
+  }
+  if (typeof sqlAny.size === 'number') {
+    return `size=${sqlAny.size}`;
+  }
+  return 'pool-stats-unavailable';
+}
+
+export function logPoolStats(label: string): void {
+  rawLog(`[DB-POOL] ${label}: ${getDatabasePoolStats()}`);
 }
 
 export const DRIZZLE_DATABASE = 'DRIZZLE_DATABASE';

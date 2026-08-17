@@ -5,4 +5,6 @@ export declare function getRawSqlClient(): ReturnType<typeof postgres>;
 export declare function getDatabaseInitPromise(): Promise<void> | null;
 export declare function isDatabaseFailed(): boolean;
 export declare function getDatabaseInitError(): Error | null;
+export declare function getDatabasePoolStats(): string;
+export declare function logPoolStats(label: string): void;
 export declare const DRIZZLE_DATABASE = "DRIZZLE_DATABASE";

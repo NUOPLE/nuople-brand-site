@@ -4,6 +4,9 @@ export declare class PublicService {
     private readonly db;
     constructor(db: PostgresJsDatabase);
     private get rawSql();
+    healthCheck(): Promise<{
+        ok: boolean;
+    }>;
     getFeaturedWorks(limit?: number): Promise<PublicFeaturedWorksResponse>;
     getWorkList(params: {
         page: number;

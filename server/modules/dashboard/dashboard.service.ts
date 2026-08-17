@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { DRIZZLE_DATABASE } from '../../database/connection';
+import { DRIZZLE_DATABASE, logPoolStats } from '../../database/connection';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import type { DashboardStats, RecentMessage, CategoryStat } from '@shared/api.interface';
@@ -7,7 +7,7 @@ import type { DashboardStats, RecentMessage, CategoryStat } from '@shared/api.in
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 
-const STATS_TIMEOUT_MS = 5000;
+const STATS_TIMEOUT_MS = 10000;
 
 const logger = new Logger('DashboardService');
 
@@ -51,6 +51,7 @@ export class DashboardService {
 
   async getStats(): Promise<DashboardStats> {
     rawLog('[DashboardService] getStats STEP1 enter');
+    logPoolStats('dashboard-before');
     try {
       const sql = this.rawSql;
       const result = await withTimeout(
@@ -103,8 +104,9 @@ export class DashboardService {
         STATS_TIMEOUT_MS,
         'dashboard-stats',
       );
-      rawLog('[DashboardService] getStats STEP4 success');
-      return result;
+       rawLog('[DashboardService] getStats STEP4 success');
+       logPoolStats('dashboard-after');
+       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       rawError(`[DashboardService] getStats FAILED (returning zeros): ${msg}`);
@@ -129,8 +131,9 @@ export class DashboardService {
         const { cause } = current as { cause?: unknown };
         current = cause;
       }
-      logger.error(`getStats failed, returning empty stats: ${msg}`);
-      return EMPTY_STATS;
+       logger.error(`getStats failed, returning empty stats: ${msg}`);
+       logPoolStats('dashboard-failed');
+       return EMPTY_STATS;
     }
   }
 }

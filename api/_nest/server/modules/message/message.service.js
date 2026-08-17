@@ -15,7 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MessageService = void 0;
 const common_1 = require("@nestjs/common");
 const connection_1 = require("../../database/connection");
-const DB_TIMEOUT_MS = 5000;
+const DB_TIMEOUT_MS = 10000;
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 function withTimeout(promise, ms, label) {
@@ -45,6 +45,7 @@ let MessageService = class MessageService {
     }
     async getList(page, pageSize, status) {
         rawLog(`[MessageService.getList] STEP1 enter page=${page} pageSize=${pageSize} status=${status}`);
+        (0, connection_1.logPoolStats)('getList-before');
         const whereSql = status === 'unread'
             ? this.sql `WHERE is_read = FALSE`
             : status === 'read'
@@ -75,6 +76,7 @@ let MessageService = class MessageService {
             ]), DB_TIMEOUT_MS, 'message-list');
             const elapsed = Date.now() - start;
             rawLog(`[MessageService.getList] STEP3 done in ${elapsed}ms items=${itemsResult.length} total=${totalResult[0]?.count} unread=${unreadResult[0]?.count}`);
+            (0, connection_1.logPoolStats)('getList-after');
             const items = itemsResult.map((row) => ({
                 id: row.id,
                 name: row.name,
@@ -91,6 +93,7 @@ let MessageService = class MessageService {
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             rawError(`[MessageService.getList] FAILED after ${Date.now() - start}ms: ${msg}`);
+            (0, connection_1.logPoolStats)('getList-failed');
             return { items: [], total: 0, totalUnread: 0 };
         }
     }

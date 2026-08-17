@@ -98,6 +98,15 @@ export class PublicService {
     return (this.db as unknown as { $client: ReturnType<typeof import('postgres')> }).$client;
   }
 
+  async healthCheck(): Promise<{ ok: boolean }> {
+    const sql = this.rawSql;
+    const rows = await sql`SELECT 1 AS ok`;
+    if (!rows || rows.length === 0) {
+      throw new Error('DB health check returned no rows');
+    }
+    return { ok: true };
+  }
+
   async getFeaturedWorks(limit = 5): Promise<PublicFeaturedWorksResponse> {
     const t0 = Date.now();
     rawLog(`[Public] getFeaturedWorks STEP1 enter limit=${limit}`);

@@ -17,7 +17,7 @@ const common_1 = require("@nestjs/common");
 const connection_1 = require("../../database/connection");
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
-const STATS_TIMEOUT_MS = 5000;
+const STATS_TIMEOUT_MS = 10000;
 const logger = new common_1.Logger('DashboardService');
 function withTimeout(promise, ms, label) {
     return new Promise((resolve, reject) => {
@@ -55,6 +55,7 @@ let DashboardService = class DashboardService {
     }
     async getStats() {
         rawLog('[DashboardService] getStats STEP1 enter');
+        (0, connection_1.logPoolStats)('dashboard-before');
         try {
             const sql = this.rawSql;
             const result = await withTimeout((async () => {
@@ -94,6 +95,7 @@ let DashboardService = class DashboardService {
                 };
             })(), STATS_TIMEOUT_MS, 'dashboard-stats');
             rawLog('[DashboardService] getStats STEP4 success');
+            (0, connection_1.logPoolStats)('dashboard-after');
             return result;
         }
         catch (err) {
@@ -112,6 +114,7 @@ let DashboardService = class DashboardService {
                 current = cause;
             }
             logger.error(`getStats failed, returning empty stats: ${msg}`);
+            (0, connection_1.logPoolStats)('dashboard-failed');
             return EMPTY_STATS;
         }
     }

@@ -4,6 +4,12 @@ import type { PublicWorkListResponse, PublicWorkDetail, PublicSiteSettings, Publ
 export declare class PublicController {
     private readonly publicService;
     constructor(publicService: PublicService);
+    health(): Promise<{
+        status: string;
+        db: boolean;
+        pool: string;
+        timestamp: string;
+    }>;
     getFeaturedWorks(limit?: string): Promise<PublicFeaturedWorksResponse>;
     getWorkList(page?: string, pageSize?: string, category?: string): Promise<PublicWorkListResponse>;
     getWorkDetail(id: string): Promise<PublicWorkDetail>;

@@ -9,6 +9,8 @@ exports.getRawSqlClient = getRawSqlClient;
 exports.getDatabaseInitPromise = getDatabaseInitPromise;
 exports.isDatabaseFailed = isDatabaseFailed;
 exports.getDatabaseInitError = getDatabaseInitError;
+exports.getDatabasePoolStats = getDatabasePoolStats;
+exports.logPoolStats = logPoolStats;
 const postgres_js_1 = require("drizzle-orm/postgres-js");
 const postgres_1 = __importDefault(require("postgres"));
 const common_1 = require("@nestjs/common");
@@ -67,14 +69,16 @@ function getDatabase() {
         databaseUrl.includes('cockroach')) {
         ssl = { rejectUnauthorized: false };
     }
-    const connectTimeoutSec = parseInt(process.env.PG_CONNECT_TIMEOUT || '', 10) || 15;
+    const connectTimeoutSec = parseInt(process.env.PG_CONNECT_TIMEOUT || '', 10) || 20;
+    const maxConns = parseInt(process.env.PG_MAX || '', 10) || 5;
+    const idleTimeoutSec = parseInt(process.env.PG_IDLE_TIMEOUT || '', 10) || 30;
     const maxRetries = parseInt(process.env.PG_CONNECT_RETRIES || '', 10) || 3;
     const retryDelayMs = parseInt(process.env.PG_CONNECT_RETRY_DELAY_MS || '', 10) || 1000;
-    rawLog(`[DB] Creating postgres client (ssl=${Boolean(ssl)}, connect_timeout=${connectTimeoutSec}s, retries=${maxRetries})`);
+    rawLog(`[DB] Creating postgres client (ssl=${Boolean(ssl)}, max=${maxConns}, idle_timeout=${idleTimeoutSec}s, connect_timeout=${connectTimeoutSec}s, retries=${maxRetries})`);
     const initStart = Date.now();
     const sql = (0, postgres_1.default)(databaseUrl, {
-        max: 3,
-        idle_timeout: 15,
+        max: maxConns,
+        idle_timeout: idleTimeoutSec,
         connect_timeout: connectTimeoutSec,
         ssl,
         prepare: false,
@@ -171,5 +175,21 @@ function isDatabaseFailed() {
 }
 function getDatabaseInitError() {
     return initError;
+}
+function getDatabasePoolStats() {
+    if (!rawSqlInstance)
+        return 'pool-not-initialized';
+    const sqlAny = rawSqlInstance;
+    const conns = sqlAny.connections;
+    if (conns) {
+        return `total=${conns.size ?? '?'} idle=${conns.idle ?? '?'} waiting=${conns.waiting ?? '?'}`;
+    }
+    if (typeof sqlAny.size === 'number') {
+        return `size=${sqlAny.size}`;
+    }
+    return 'pool-stats-unavailable';
+}
+function logPoolStats(label) {
+    rawLog(`[DB-POOL] ${label}: ${getDatabasePoolStats()}`);
 }
 exports.DRIZZLE_DATABASE = 'DRIZZLE_DATABASE';

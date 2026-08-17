@@ -8,7 +8,9 @@ import {
   Post,
   Query,
   Req,
+  HttpStatus,
 } from '@nestjs/common';
+import { logPoolStats } from '../../database/connection';
 import type { Request } from 'express';
 
 const rawLog = globalThis.console.log.bind(globalThis.console);
@@ -29,6 +31,25 @@ import type {
 @Controller('api/public')
 export class PublicController {
   constructor(private readonly publicService: PublicService) {}
+
+  @Get('health')
+  async health(): Promise<{ status: string; db: boolean; pool: string; timestamp: string }> {
+    rawLog('[PublicController] health check');
+    let dbOk = false;
+    try {
+      await this.publicService.healthCheck();
+      dbOk = true;
+    } catch (err) {
+      rawError(`[PublicController] health db check failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    logPoolStats('health');
+    return {
+      status: dbOk ? 'ok' : 'degraded',
+      db: dbOk,
+      pool: dbOk ? 'connected' : 'failed',
+      timestamp: new Date().toISOString(),
+    };
+  }
 
   @Get('works/featured')
   async getFeaturedWorks(
