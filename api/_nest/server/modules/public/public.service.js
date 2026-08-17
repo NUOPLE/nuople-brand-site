@@ -328,6 +328,34 @@ let PublicService = class PublicService {
             return { items: [] };
         }
     }
+    async getMessageById(id) {
+        rawLog(`[MSG_DEBUG] getMessageById ENTER id=${id}`);
+        try {
+            const sql = this.rawSql;
+            const rows = await withTimeout(sql `
+          SELECT id, content, reply_content, replied_at, is_read
+          FROM message
+          WHERE id = ${id}
+          LIMIT 1
+        `, DB_TIMEOUT_MS, 'public-get-message-by-id');
+            rawLog(`[MSG_DEBUG] getMessageById rows=${rows.length}`);
+            if (rows.length === 0) {
+                throw new common_1.NotFoundException('留言不存在');
+            }
+            const row = rows[0];
+            return {
+                id: String(row.id),
+                content: String(row.content ?? ''),
+                replyContent: row.reply_content != null ? String(row.reply_content) : null,
+                repliedAt: row.replied_at ? new Date(row.replied_at).toISOString() : null,
+                isRead: Boolean(row.is_read),
+            };
+        }
+        catch (err) {
+            rawError(`[MSG_DEBUG] getMessageById FAILED: ${err instanceof Error ? err.message : String(err)}`);
+            throw err;
+        }
+    }
     async submitMessage(dto) {
         rawLog(`[MSG_DEBUG] submitMessage ENTER name="${dto.name}" email="${dto.email}" contentLen=${dto.content.length}`);
         rawLog(`[MSG_DEBUG] submitMessage dto keys: ${Object.keys(dto).join(',')}`);

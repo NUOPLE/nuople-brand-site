@@ -55,6 +55,10 @@ let PublicController = class PublicController {
     async getKeywordRules() {
         return this.publicService.getKeywordRules();
     }
+    async getMessageDetail(id) {
+        rawLog(`[PublicController] GET /api/public/messages/${id}`);
+        return this.publicService.getMessageById(id);
+    }
     async submitMessage(req, body) {
         rawLog(`[MSG_DEBUG] Controller POST /api/public/messages ENTER bodyKeys=${Object.keys(body || {}).join(',')} name="${body?.name}" email="${body?.email}"`);
         if (!body?.name?.trim()) {
@@ -132,6 +136,13 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], PublicController.prototype, "getKeywordRules", null);
+__decorate([
+    (0, common_1.Get)('messages/:id'),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], PublicController.prototype, "getMessageDetail", null);
 __decorate([
     (0, common_1.Post)('messages'),
     __param(0, (0, common_1.Req)()),

@@ -22,6 +22,7 @@ import type {
   PublicKeywordRulesResponse,
   PublicMessageSubmitRequest,
   PublicMessageSubmitResponse,
+  PublicMessageDetail,
   PublicFeaturedWorksResponse,
 } from '@shared/api.interface';
 
@@ -78,6 +79,12 @@ export class PublicController {
   @Get('keyword-rules')
   async getKeywordRules(): Promise<PublicKeywordRulesResponse> {
     return this.publicService.getKeywordRules();
+  }
+
+  @Get('messages/:id')
+  async getMessageDetail(@Param('id') id: string): Promise<PublicMessageDetail> {
+    rawLog(`[PublicController] GET /api/public/messages/${id}`);
+    return this.publicService.getMessageById(id);
   }
 
   @Post('messages')

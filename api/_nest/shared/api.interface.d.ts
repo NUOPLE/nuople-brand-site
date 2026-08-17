@@ -224,6 +224,13 @@ export interface PublicMessageSubmitResponse {
     success: boolean;
     id: string;
 }
+export interface PublicMessageDetail {
+    id: string;
+    content: string;
+    replyContent: string | null;
+    repliedAt: string | null;
+    isRead: boolean;
+}
 export interface PublicFeaturedWorksResponse {
     items: PublicWorkListItem[];
 }

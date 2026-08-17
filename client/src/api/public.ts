@@ -7,6 +7,7 @@ import type {
   PublicKeywordRulesResponse,
   PublicMessageSubmitRequest,
   PublicMessageSubmitResponse,
+  PublicMessageDetail,
   PublicFeaturedWorksResponse,
 } from '@shared/api.interface';
 
@@ -57,5 +58,13 @@ export const submitPublicMessage = (
 ): Promise<PublicMessageSubmitResponse> => {
   return axiosForBackend
     .post('/api/public/messages', data)
+    .then((res) => res.data);
+};
+
+export const getPublicMessageDetail = (
+  id: string,
+): Promise<PublicMessageDetail> => {
+  return axiosForBackend
+    .get(`/api/public/messages/${id}`)
     .then((res) => res.data);
 };

@@ -1,5 +1,5 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import type { PublicWorkListItem, PublicWorkListResponse, PublicWorkDetail, PublicSiteSettings, PublicKeywordRulesResponse, PublicMessageSubmitRequest, PublicMessageSubmitResponse, PublicFeaturedWorksResponse } from '@shared/api.interface';
+import type { PublicWorkListItem, PublicWorkListResponse, PublicWorkDetail, PublicSiteSettings, PublicKeywordRulesResponse, PublicMessageSubmitRequest, PublicMessageSubmitResponse, PublicMessageDetail, PublicFeaturedWorksResponse } from '@shared/api.interface';
 export declare class PublicService {
     private readonly db;
     constructor(db: PostgresJsDatabase);
@@ -14,5 +14,6 @@ export declare class PublicService {
     getNextWork(id: string): Promise<PublicWorkListItem | null>;
     getSiteSettings(): Promise<PublicSiteSettings>;
     getKeywordRules(): Promise<PublicKeywordRulesResponse>;
+    getMessageById(id: string): Promise<PublicMessageDetail>;
     submitMessage(dto: PublicMessageSubmitRequest): Promise<PublicMessageSubmitResponse>;
 }

@@ -1,9 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, X, Send, UserCheck } from 'lucide-react';
 
 import { Button } from '@client/src/components/ui/button';
-import { getPublicKeywordRules, submitPublicMessage } from '@client/src/api/public';
-import type { PublicKeywordRule } from '@shared/api.interface';
+import {
+  getPublicKeywordRules,
+  submitPublicMessage,
+  getPublicMessageDetail,
+} from '@client/src/api/public';
+import type { PublicKeywordRule, PublicMessageDetail } from '@shared/api.interface';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 
 interface ChatMessage {
@@ -11,14 +15,30 @@ interface ChatMessage {
   type: 'user' | 'bot';
   content: string;
   time: string;
+  source?: 'keyword' | 'human';
 }
 
 const TRANSFER_TRIGGER_COUNT = 5;
+const POLL_INTERVAL_MS = 5000;
+const POLL_MAX_COUNT = 12;
+const STORAGE_KEY = 'chat_message_id';
+const STORAGE_REPLIED_KEY = 'chat_message_replied';
 
 const containsHumanKeyword = (text: string): boolean => {
   const lower = text.toLowerCase();
   return lower.includes('人工客服') || lower.includes('转人工') || lower.includes('人工');
 };
+
+const makeBotMsg = (content: string, source?: ChatMessage['source']): ChatMessage => ({
+  id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+  type: 'bot',
+  content,
+  time: new Date().toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }),
+  source,
+});
 
 const ChatWidget = () => {
   const [open, setOpen] = useState(false);
@@ -29,6 +49,9 @@ const ChatWidget = () => {
   const [transferring, setTransferring] = useState(false);
   const [showTransferButton, setShowTransferButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollCountRef = useRef(0);
+  const pendingMessageIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const fetchRules = async () => {
@@ -60,15 +83,86 @@ const ChatWidget = () => {
     return '感谢您的留言，我们的工作人员会尽快回复您。';
   };
 
-  const makeBotMsg = (content: string): ChatMessage => ({
-    id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    type: 'bot',
-    content,
-    time: new Date().toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
-  });
+  const clearPollTimer = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    pollCountRef.current = 0;
+  }, []);
+
+  const showHumanReply = useCallback((replyContent: string) => {
+    const replyMsg = makeBotMsg(`【人工客服】${replyContent}`, 'human');
+    setMessages((prev) => [...prev, replyMsg]);
+  }, []);
+
+  const pollReply = useCallback(async (messageId: string) => {
+    try {
+      const detail: PublicMessageDetail = await getPublicMessageDetail(messageId);
+      logger.info('[ChatWidget] pollReply result:', JSON.stringify(detail));
+      if (detail.replyContent) {
+        clearPollTimer();
+        pendingMessageIdRef.current = null;
+        showHumanReply(detail.replyContent);
+        try {
+          localStorage.setItem(
+            STORAGE_REPLIED_KEY,
+            JSON.stringify({ id: messageId, replyContent: detail.replyContent, repliedAt: detail.repliedAt }),
+          );
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          // ignore storage errors
+        }
+      }
+    } catch (err: unknown) {
+      logger.error('[ChatWidget] pollReply FAILED:', String(err));
+    }
+
+    pollCountRef.current += 1;
+    if (pollCountRef.current >= POLL_MAX_COUNT) {
+      clearPollTimer();
+    }
+  }, [clearPollTimer, showHumanReply]);
+
+  const startPolling = useCallback((messageId: string) => {
+    clearPollTimer();
+    pendingMessageIdRef.current = messageId;
+    pollCountRef.current = 0;
+    pollReply(messageId);
+    pollTimerRef.current = setInterval(() => {
+      pollReply(messageId);
+    }, POLL_INTERVAL_MS);
+  }, [clearPollTimer, pollReply]);
+
+  const restoreFromStorage = useCallback(() => {
+    try {
+      const pendingId = localStorage.getItem(STORAGE_KEY);
+      const repliedRaw = localStorage.getItem(STORAGE_REPLIED_KEY);
+
+      if (pendingId) {
+        logger.info(`[ChatWidget] restore pending message: ${pendingId}`);
+        startPolling(pendingId);
+        return;
+      }
+
+      if (repliedRaw) {
+        const parsed = JSON.parse(repliedRaw) as { id: string; replyContent: string; repliedAt?: string };
+        logger.info(`[ChatWidget] restore replied message: ${parsed.id}`);
+        showHumanReply(parsed.replyContent);
+      }
+    } catch (err) {
+      logger.error('[ChatWidget] restoreFromStorage failed:', String(err));
+    }
+  }, [showHumanReply, startPolling]);
+
+  useEffect(() => {
+    if (open) {
+      restoreFromStorage();
+    }
+    return () => {
+      clearPollTimer();
+    };
+  }, [open, clearPollTimer, restoreFromStorage]);
 
   const handleSend = () => {
     const text = input.trim();
@@ -100,7 +194,7 @@ const ChatWidget = () => {
         );
       } else {
         const reply = matchReply(text);
-        botMessages.push(makeBotMsg(reply));
+        botMessages.push(makeBotMsg(reply, 'keyword'));
 
         if (newUserCount === TRANSFER_TRIGGER_COUNT) {
           botMessages.push(
@@ -146,6 +240,14 @@ const ChatWidget = () => {
       logger.info('[ChatWidget] submit success:', JSON.stringify(result));
       setMessages((prev) => [...prev, makeBotMsg('感谢您的留言，我们的工作人员会尽快回复您。')]);
       setShowTransferButton(false);
+
+      try {
+        localStorage.setItem(STORAGE_KEY, result.id);
+      } catch {
+        // ignore storage errors
+      }
+
+      startPolling(result.id);
     } catch (err: unknown) {
       logger.error('[ChatWidget] submit FAILED:', String(err));
       logger.error('[ChatWidget] error message:', String(err instanceof Error ? err.message : String(err)));

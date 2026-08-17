@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Inject, Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { DRIZZLE_DATABASE } from '../../database/connection';
@@ -12,6 +12,7 @@ import type {
   PublicKeywordRulesResponse,
   PublicMessageSubmitRequest,
   PublicMessageSubmitResponse,
+  PublicMessageDetail,
   PublicFeaturedWorksResponse,
   ServiceItem,
   ProcessStep,
@@ -394,6 +395,38 @@ export class PublicService {
       rawError(`[Public] getKeywordRules FAILED: ${msg}`);
       logger.error(`getKeywordRules failed: ${msg}`);
       return { items: [] };
+    }
+  }
+
+  async getMessageById(id: string): Promise<PublicMessageDetail> {
+    rawLog(`[MSG_DEBUG] getMessageById ENTER id=${id}`);
+    try {
+      const sql = this.rawSql;
+      const rows = await withTimeout(
+        sql`
+          SELECT id, content, reply_content, replied_at, is_read
+          FROM message
+          WHERE id = ${id}
+          LIMIT 1
+        `,
+        DB_TIMEOUT_MS,
+        'public-get-message-by-id',
+      );
+      rawLog(`[MSG_DEBUG] getMessageById rows=${rows.length}`);
+      if (rows.length === 0) {
+        throw new NotFoundException('留言不存在');
+      }
+      const row = rows[0] as Record<string, unknown>;
+      return {
+        id: String(row.id),
+        content: String(row.content ?? ''),
+        replyContent: row.reply_content != null ? String(row.reply_content) : null,
+        repliedAt: row.replied_at ? new Date(row.replied_at as string | Date).toISOString() : null,
+        isRead: Boolean(row.is_read),
+      };
+    } catch (err) {
+      rawError(`[MSG_DEBUG] getMessageById FAILED: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
     }
   }
 
