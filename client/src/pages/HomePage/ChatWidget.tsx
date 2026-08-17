@@ -86,6 +86,8 @@ const ChatWidget = () => {
 
   const handleTransferToHuman = async () => {
     const userMessages = messages.filter((m) => m.type === 'user');
+    logger.info('[ChatWidget] handleTransferToHuman called, userMessages count:', String(userMessages.length));
+
     if (userMessages.length === 0) {
       const botMsg: ChatMessage = {
         id: `b-${Date.now()}`,
@@ -100,16 +102,23 @@ const ChatWidget = () => {
       return;
     }
 
-    if (transferring) return;
+    if (transferring) {
+      logger.info('[ChatWidget] already transferring, skip');
+      return;
+    }
     setTransferring(true);
 
+    const content = userMessages.map((m: ChatMessage) => `【用户】${m.content}`).join('\n');
+    const payload = {
+      name: '访客',
+      email: 'chat@nuople.cn',
+      content,
+    };
+    logger.info('[ChatWidget] submit message payload:', JSON.stringify(payload));
+
     try {
-      const content = userMessages.map((m, i) => `【用户消息${i + 1}】${m.content}`).join('\n');
-      await submitPublicMessage({
-        name: '访客',
-        email: 'chat@nuople.cn',
-        content,
-      });
+      const result = await submitPublicMessage(payload);
+      logger.info('[ChatWidget] submit success:', JSON.stringify(result));
       const botMsg: ChatMessage = {
         id: `b-${Date.now()}`,
         type: 'bot',
@@ -120,7 +129,10 @@ const ChatWidget = () => {
         }),
       };
       setMessages((prev) => [...prev, botMsg]);
-    } catch (err) {
+    } catch (err: unknown) {
+      logger.error('[ChatWidget] submit FAILED:', String(err));
+      logger.error('[ChatWidget] error message:', String(err instanceof Error ? err.message : String(err)));
+      logger.error('[ChatWidget] error stack:', String(err instanceof Error ? err.stack : 'no stack'));
       logger.error('transfer to human failed', String(err));
       const botMsg: ChatMessage = {
         id: `b-${Date.now()}`,
