@@ -13,6 +13,13 @@ interface ChatMessage {
   time: string;
 }
 
+const TRANSFER_TRIGGER_COUNT = 5;
+
+const containsHumanKeyword = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  return lower.includes('人工客服') || lower.includes('转人工') || lower.includes('人工');
+};
+
 const ChatWidget = () => {
   const [open, setOpen] = useState(false);
   const [rules, setRules] = useState<PublicKeywordRule[]>([]);
@@ -20,6 +27,7 @@ const ChatWidget = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [transferring, setTransferring] = useState(false);
+  const [showTransferButton, setShowTransferButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,6 +46,8 @@ const ChatWidget = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const userMessageCount = messages.filter((m) => m.type === 'user').length;
+
   const matchReply = (text: string): string => {
     const lowerText = text.toLowerCase();
     for (const rule of rules) {
@@ -50,12 +60,22 @@ const ChatWidget = () => {
     return '感谢您的留言，我们的工作人员会尽快回复您。';
   };
 
+  const makeBotMsg = (content: string): ChatMessage => ({
+    id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    type: 'bot',
+    content,
+    time: new Date().toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  });
+
   const handleSend = () => {
     const text = input.trim();
     if (!text || sending) return;
 
     const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
+      id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type: 'user',
       content: text,
       time: new Date().toLocaleTimeString('zh-CN', {
@@ -64,23 +84,37 @@ const ChatWidget = () => {
       }),
     };
 
+    const newUserCount = userMessageCount + 1;
+    const hitHumanKeyword = containsHumanKeyword(text);
+
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setSending(true);
 
     setTimeout(() => {
-      const reply = matchReply(text);
-      const botMsg: ChatMessage = {
-        id: `b-${Date.now()}`,
-        type: 'bot',
-        content: reply,
-        time: new Date().toLocaleTimeString('zh-CN', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      };
-      setMessages((prev) => [...prev, botMsg]);
+      const botMessages: ChatMessage[] = [];
+
+      if (hitHumanKeyword) {
+        botMessages.push(
+          makeBotMsg('好的，正在为您转接人工客服，请点击下方按钮提交您的问题。'),
+        );
+      } else {
+        const reply = matchReply(text);
+        botMessages.push(makeBotMsg(reply));
+
+        if (newUserCount === TRANSFER_TRIGGER_COUNT) {
+          botMessages.push(
+            makeBotMsg('您的问题可能需要人工解答，是否需要转人工客服？'),
+          );
+        }
+      }
+
+      setMessages((prev) => [...prev, ...botMessages]);
       setSending(false);
+
+      if (hitHumanKeyword || newUserCount >= TRANSFER_TRIGGER_COUNT) {
+        setShowTransferButton(true);
+      }
     }, 600);
   };
 
@@ -89,16 +123,7 @@ const ChatWidget = () => {
     logger.info('[ChatWidget] handleTransferToHuman called, userMessages count:', String(userMessages.length));
 
     if (userMessages.length === 0) {
-      const botMsg: ChatMessage = {
-        id: `b-${Date.now()}`,
-        type: 'bot',
-        content: '请先输入您的问题，再点击「转人工」，我们的工作人员会尽快回复您。',
-        time: new Date().toLocaleTimeString('zh-CN', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      };
-      setMessages((prev) => [...prev, botMsg]);
+      setMessages((prev) => [...prev, makeBotMsg('请先输入您的问题，再点击「转人工」，我们的工作人员会尽快回复您。')]);
       return;
     }
 
@@ -119,31 +144,14 @@ const ChatWidget = () => {
     try {
       const result = await submitPublicMessage(payload);
       logger.info('[ChatWidget] submit success:', JSON.stringify(result));
-      const botMsg: ChatMessage = {
-        id: `b-${Date.now()}`,
-        type: 'bot',
-        content: '感谢您的留言，我们的工作人员会尽快回复您。',
-        time: new Date().toLocaleTimeString('zh-CN', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      };
-      setMessages((prev) => [...prev, botMsg]);
+      setMessages((prev) => [...prev, makeBotMsg('感谢您的留言，我们的工作人员会尽快回复您。')]);
+      setShowTransferButton(false);
     } catch (err: unknown) {
       logger.error('[ChatWidget] submit FAILED:', String(err));
       logger.error('[ChatWidget] error message:', String(err instanceof Error ? err.message : String(err)));
       logger.error('[ChatWidget] error stack:', String(err instanceof Error ? err.stack : 'no stack'));
       logger.error('transfer to human failed', String(err));
-      const botMsg: ChatMessage = {
-        id: `b-${Date.now()}`,
-        type: 'bot',
-        content: '留言提交失败，请稍后重试。',
-        time: new Date().toLocaleTimeString('zh-CN', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      };
-      setMessages((prev) => [...prev, botMsg]);
+      setMessages((prev) => [...prev, makeBotMsg('留言提交失败，请稍后重试。')]);
     } finally {
       setTransferring(false);
     }
@@ -214,16 +222,18 @@ const ChatWidget = () => {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="px-3 py-2 border-t border-black/10 flex justify-center bg-gray-50">
-            <button
-              onClick={handleTransferToHuman}
-              disabled={transferring}
-              className="flex items-center gap-1.5 text-xs text-black/60 hover:text-black transition-colors disabled:opacity-50"
-            >
-              <UserCheck className="size-3.5" />
-              {transferring ? '提交中...' : '转人工客服'}
-            </button>
-          </div>
+          {showTransferButton && (
+            <div className="px-3 py-2 border-t border-black/10 flex justify-center bg-gray-50">
+              <button
+                onClick={handleTransferToHuman}
+                disabled={transferring}
+                className="flex items-center gap-1.5 text-xs text-black/60 hover:text-black transition-colors disabled:opacity-50"
+              >
+                <UserCheck className="size-3.5" />
+                {transferring ? '提交中...' : '转人工客服'}
+              </button>
+            </div>
+          )}
 
           <div className="p-3 border-t border-black/10 flex items-center gap-2">
             <input
