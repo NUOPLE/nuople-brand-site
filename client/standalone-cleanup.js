@@ -2,13 +2,19 @@
 /**
  * Post-build cleanup for standalone (Vercel) deployments.
  *
- * The Vite preset injects platform-specific scripts (slardar monitoring,
- * bytedance performance, template variables like {{appId}}) into index.html.
- * Outside the Miaoda platform those template vars are never replaced and the
- * external CDN scripts fail, causing a blank page.
+ * The Miaoda fullstack-vite-preset injects platform-specific scripts
+ * (slardar monitoring, bytedance performance, tea analytics) and
+ * Handlebars-style template variables ({{appId}}, {{appName}}, etc.)
+ * into index.html. Outside the Miaoda platform those external CDN
+ * scripts fail and the template vars are never replaced, causing
+ * runtime errors and a blank page.
+ *
+ * This script surgically removes only the platform-specific parts
+ * while preserving Vite polyfills, CSS detection, and the main
+ * app bundle (JS + CSS).
  *
  * Usage: node client/standalone-cleanup.js
- * Run after `npm run build:client` to sanitize dist/client/index.html.
+ * Run after `npx vite build` to sanitize dist/client/index.html.
  */
 
 const fs = require('fs');
@@ -41,78 +47,151 @@ const titleMatch = source.match(/<title>([^<]*)<\/title>/);
 const iconMatch = source.match(/<link[^>]*rel="icon"[^>]*href="([^"]*)"/i)
   || source.match(/<link[^>]*href="([^"]*)"[^>]*rel="icon"/i);
 const appName = titleMatch ? titleMatch[1] : 'Brand CMS';
-const appDescription = extractMeta('description');
-const appAvatar = iconMatch ? iconMatch[1] : '/favicon.svg';
-const keywords = extractMeta('keywords');
+const appDescription = extractMeta('description') || appName;
+const appAvatar = iconMatch ? iconMatch[1] : './favicon.svg';
+const keywords = extractMeta('keywords') || '';
 
 let html = fs.readFileSync(INDEX_PATH, 'utf8');
 const originalSize = html.length;
 
-function removeScriptContaining(needle) {
-  let removed = 0;
-  let idx = html.indexOf(needle);
-  while (idx !== -1) {
-    const scriptStart = html.lastIndexOf('<script', idx);
-    if (scriptStart === -1) break;
-    const openEnd = html.indexOf('>', scriptStart);
+out('Input size: ' + originalSize.toLocaleString() + ' bytes');
+
+/**
+ * Find all <script>...</script> block ranges in `html`.
+ * Returns [{ start, end }] where start is the index of '<' and end is
+ * the index after '</script>'.
+ */
+function findAllScriptBlocks(str) {
+  const blocks = [];
+  let i = 0;
+  while (i < str.length) {
+    const openStart = str.indexOf('<script', i);
+    if (openStart === -1) break;
+    const openEnd = str.indexOf('>', openStart);
     if (openEnd === -1) break;
-    const closeIdx = html.indexOf('</script>', openEnd + 1);
+    // self-closing check: <script ... /> (unusual but handle)
+    if (str[openEnd - 1] === '/') {
+      blocks.push({ start: openStart, end: openEnd + 1 });
+      i = openEnd + 1;
+      continue;
+    }
+    const closeIdx = str.indexOf('</script>', openEnd + 1);
     if (closeIdx === -1) break;
     const closeEnd = closeIdx + '</script>'.length;
-    html = html.slice(0, scriptStart) + html.slice(closeEnd);
-    removed += 1;
-    idx = html.indexOf(needle, scriptStart);
+    blocks.push({ start: openStart, end: closeEnd });
+    i = closeEnd;
   }
+  return blocks;
+}
+
+/**
+ * Remove all <script> blocks whose body contains `needle`.
+ * Returns the number of blocks removed.
+ */
+function removeScriptsContaining(needle, label) {
+  const blocks = findAllScriptBlocks(html);
+  let removed = 0;
+  // Work backwards so indices stay valid
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    const body = html.slice(b.start, b.end);
+    if (body.indexOf(needle) !== -1) {
+      html = html.slice(0, b.start) + html.slice(b.end);
+      removed += 1;
+    }
+  }
+  if (removed > 0) out('Removed ' + removed + ' ' + label + ' script block(s)');
   return removed;
 }
 
-const slardarStubRemoved = removeScriptContaining('window.__slardarErrBuf');
-const slardarLoaderRemoved = removeScriptContaining("slardarScript = document.createElement('script')");
-const teaRemoved = removeScriptContaining('LogAnalyticsObject');
+// 1. Remove slardar error monitoring (stub block + dynamic loader block)
+removeScriptsContaining('window.__slardarErrBuf', 'slardar-stub');
+removeScriptsContaining("slardarScript = document.createElement('script')", 'slardar-loader');
 
+// 2. Remove bytedance performance external script tag
 let perfRemoved = 0;
 html = html.replace(
   /<script[^>]*src="[^"]*byted\/performance[^"]*"[^>]*><\/script>/g,
   () => { perfRemoved += 1; return ''; }
 );
+if (perfRemoved > 0) out('Removed ' + perfRemoved + ' bytedance performance script tag(s)');
 
+// 3. Remove tea / collectEvent analytics script block
+removeScriptsContaining('LogAnalyticsObject', 'tea-analytics');
+
+// 4. Remove noscript fallback for slardar
+const noscriptBefore = html.length;
 html = html.replace(/<noscript>[\s\S]*?slardar[\s\S]*?<\/noscript>/gi, '');
+if (html.length !== noscriptBefore) out('Removed slardar noscript fallback');
 
-const globalsPattern = /<script>[\s\S]*?window\.csrfToken\s*=[\s\S]*?window\.__BASENAME__\s*=\s*"[^"]*";[\s\S]*?<\/script>/;
+// 5. Replace the platform-globals <script> block with safe stubs
+//    Match the block that starts with window.csrfToken and ends with __BASENAME__
+const globalsPattern = /<script>[^<]*window\.csrfToken\s*=[\s\S]*?window\.__BASENAME__\s*=\s*"[^"]*";[\s\S]*?<\/script>/;
 if (globalsPattern.test(html)) {
   html = html.replace(
     globalsPattern,
-    '<script>\nwindow.csrfToken = "";\nwindow.userId = "";\nwindow.tenantId = "";\nwindow.appId = "";\nwindow.ENVIRONMENT = "production";\nwindow._appInfo = null;\nwindow.__BASENAME__ = "/";\nwindow.__platform__ = {};\nwindow.IS_MIAODA_PREVIEW = false;\nwindow.collectEvent = function() {};\nwindow.collectEvent.q = [];\nwindow.KSlardarWeb = function() {};\n</script>'
+    '<script>\n' +
+    'window.__platform__={};window.IS_MIAODA_PREVIEW=false;\n' +
+    'window.csrfToken="";window.userId="";window.tenantId="";window.appId="";\n' +
+    'window.ENVIRONMENT="production";window._appInfo=null;window.__BASENAME__="/";\n' +
+    'window.KSlardarWeb=function(){};window.__slardarErrBuf=[];\n' +
+    'window.collectEvent=function(){};window.collectEvent.q=[];\n' +
+    '</script>'
   );
+  out('Replaced platform-globals block with safe stubs');
 }
 
+// 6. Replace Handlebars template variables in meta/title/og tags
 html = html.replace(/\{\{appName\}\}/g, appName);
 html = html.replace(/\{\{appDescription\}\}/g, appDescription);
 html = html.replace(/\{\{appAvatar\}\}/g, appAvatar);
-html = html.replace(/\{\{currentUrl\}\}/g, '/');
-html = html.replace(/\{\{basename\}\}/g, '/');
+html = html.replace(/\{\{currentUrl\}\}/g, './');
+html = html.replace(/\{\{basename\}\}/g, './');
 if (keywords) {
   html = html.replace(
     /<meta[^>]*name="keywords"[^>]*content="[^"]*"/i,
     '<meta name="keywords" content="' + keywords + '"'
   );
 }
+out('Replaced template variables (appName, appDescription, appAvatar, etc.)');
 
+// 7. Collapse excessive blank lines
 html = html.replace(/\n{3,}/g, '\n\n');
 
+// Write back
 const newSize = html.length;
 fs.writeFileSync(INDEX_PATH, html, 'utf8');
+out('Output size: ' + newSize.toLocaleString() + ' bytes (' +
+    (originalSize - newSize > 0 ? '-' : '+') +
+    Math.abs(originalSize - newSize).toLocaleString() + ' bytes)');
 
-out(originalSize.toLocaleString() + ' → ' + newSize.toLocaleString() + ' bytes (-' + (originalSize - newSize).toLocaleString() + ')');
-out('removed: slardar-stub=' + slardarStubRemoved + ' slardar-loader=' + slardarLoaderRemoved + ' byted-perf=' + perfRemoved + ' tea-analytics=' + teaRemoved);
-
+// Sanity checks
 const remaining = html.match(/\{\{[^}]+\}\}/g);
 if (remaining && remaining.length > 0) {
-  warn('WARNING remaining template vars: ' + [...new Set(remaining)].join(', '));
+  warn('WARNING: remaining template variables: ' + [...new Set(remaining)].join(', '));
 } else {
-  out('all template variables replaced ✓');
+  out('OK: no remaining {{template}} variables');
 }
 
+const cssRefs = (html.match(/\.css/g) || []).length;
+const linkCss = (html.match(/rel="stylesheet"/g) || []).length;
+const noscriptCss = (html.match(/<noscript>[\s\S]*?\.css[\s\S]*?<\/noscript>/g) || []).length;
+const jsModules = (html.match(/<script[^>]*type="module"[^>]*src=/g) || []).length;
+out('CSS references: ' + cssRefs + ' total, ' + linkCss + ' link-stylesheet, ' + noscriptCss + ' noscript-fallback');
+out('JS module entries: ' + jsModules);
+
 const scriptCount = (html.match(/<script/g) || []).length;
-const cssCount = (html.match(/stylesheet/g) || []).length;
-out('remaining: ' + scriptCount + ' script tags, ' + cssCount + ' stylesheet links');
+out('Total script tags: ' + scriptCount);
+
+// Platform keyword check
+const platformKeywords = ['slardar', 'byted/performance', 'LogAnalyticsObject', '__slardarErrBuf', 'lf3-short.ibytedapm'];
+let foundPlatform = false;
+for (const kw of platformKeywords) {
+  if (html.indexOf(kw) !== -1) {
+    warn('WARNING: platform keyword still present: ' + kw);
+    foundPlatform = true;
+  }
+}
+if (!foundPlatform) out('OK: all platform monitoring scripts removed');
+
+out('Done ✓');

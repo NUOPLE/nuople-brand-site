@@ -18,6 +18,7 @@ export default defineConfig({
       '@/inspector.dev.css': path.resolve(__dirname, 'client/src/inspector.dev.css'),
     },
   },
+  base: './',
   build: {
     outDir: path.resolve(__dirname, 'dist/client'),
     emptyOutDir: true,

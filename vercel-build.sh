@@ -75,6 +75,10 @@ for (const f of files) {
 npx vite build --config vite.standalone.config.ts
 echo "Client built to dist/client/"
 
+echo "[BUILD] running standalone cleanup..."
+node client/standalone-cleanup.js
+echo "[BUILD] standalone cleanup complete"
+
 echo "=== Vercel Build: Cleanup ==="
 rm -f index.html
 # Restore original tsconfig files after build
