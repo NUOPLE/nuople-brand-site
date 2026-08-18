@@ -1,5 +1,4 @@
 import path from 'node:path';
-import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -9,16 +8,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig({
+  root: path.resolve(__dirname, 'client'),
   plugins: [react(), tailwindcss()],
+  base: './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'client/src'),
       '@client': path.resolve(__dirname, 'client'),
       '@shared': path.resolve(__dirname, 'shared'),
-      '@/inspector.dev.css': path.resolve(__dirname, 'client/src/inspector.dev.css'),
     },
   },
-  base: './',
   build: {
     outDir: path.resolve(__dirname, 'dist/client'),
     emptyOutDir: true,

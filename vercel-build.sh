@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
-# Vercel 构建脚本
-# 1. 编译后端 TypeScript 到 api/_nest/（供 Serverless Function 引用）
-# 2. 复制 client/index.html 到项目根目录（Vite 需要 index.html 在 root 下）
-# 3. 构建前端到 dist/client/
+# Vercel 构建脚本（极简版）
+# 1. 编译后端 TypeScript 到 api/_nest/
+# 2. 替换 tsconfig 去掉平台私有 preset
+# 3. 替换 client/index.html 入口为 /src/main.tsx（配合 root: client/）
+# 4. 用纯净 vite 配置构建前端到 dist/client/
+# 5. 还原 index.html 和 tsconfig
 set -euo pipefail
 
 echo "=== Vercel Build: Server ==="
 npx tsc -p tsconfig.vercel.json
 echo "Server compiled to api/_nest/"
 
-echo "=== Vercel Build: Prepare index.html ==="
-cp client/index.html index.html
-echo "index.html prepared"
-
-echo "=== Vercel Build: Client ==="
-# Patch root tsconfig files to remove @lark-apaas/fullstack-presets extends
-# before vite build — private package not available in Vercel env.
+echo "=== Vercel Build: Patch tsconfig ==="
 node -e "
 const fs = require('fs');
 const path = require('path');
@@ -49,7 +45,7 @@ for (const f of files) {
         },
         include: ['client/**/*', 'shared/**/*'],
         exclude: ['node_modules','dist','public','source_package','client/src/api/gen']
-      }, null, 2) + '\\n'
+      }, null, 2) + '\n'
     : JSON.stringify({
         compilerOptions: {
           target: 'ES2022', lib: ['ES2022'], module: 'commonjs',
@@ -67,21 +63,28 @@ for (const f of files) {
         watchOptions: { excludeDirectories: ['node_modules/**'] },
         include: ['server/**/*', 'shared/**/*.ts'],
         exclude: ['node_modules','dist','client','source_package','**/*.spec.ts','**/*.e2e-spec.ts']
-      }, null, 2) + '\\n';
+      }, null, 2) + '\n';
   fs.writeFileSync(p, inline);
   console.log('Patched ' + f);
 }
 "
+
+echo "=== Vercel Build: Patch index.html for standalone build ==="
+# 备份原 index.html（平台 dev 用 /client/src/index.tsx）
+cp client/index.html client/index.html.standalone-bak
+# 替换入口为 /src/main.tsx（配合 standalone vite 的 root: client/）
+sed -i 's|/client/src/index.tsx|/src/main.tsx|g' client/index.html
+echo "index.html entry patched to /src/main.tsx"
+
+echo "=== Vercel Build: Client ==="
 npx vite build --config vite.standalone.config.ts
 echo "Client built to dist/client/"
 
-echo "[BUILD] running standalone cleanup..."
-node client/standalone-cleanup.js
-echo "[BUILD] standalone cleanup complete"
+echo "=== Vercel Build: Restore index.html ==="
+mv client/index.html.standalone-bak client/index.html
+echo "index.html restored"
 
-echo "=== Vercel Build: Cleanup ==="
-rm -f index.html
-# Restore original tsconfig files after build
+echo "=== Vercel Build: Restore tsconfig ==="
 node -e "
 const fs = require('fs');
 const path = require('path');
