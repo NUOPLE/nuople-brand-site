@@ -69,12 +69,12 @@ export function getDatabase(): ReturnType<typeof drizzle> {
     ssl = { rejectUnauthorized: false };
   }
 
-  const connectTimeoutSec = parseInt(process.env.PG_CONNECT_TIMEOUT || '', 10) || 15;
+  const connectTimeoutSec = parseInt(process.env.PG_CONNECT_TIMEOUT || '', 10) || 8;
   const maxConns = parseInt(process.env.PG_MAX || '', 10) || 10;
-  const idleTimeoutSec = parseInt(process.env.PG_IDLE_TIMEOUT || '', 10) || 20;
-  const maxRetries = parseInt(process.env.PG_CONNECT_RETRIES || '', 10) || 2;
-  const retryDelayMs = parseInt(process.env.PG_CONNECT_RETRY_DELAY_MS || '', 10) || 1000;
-  const statementTimeoutMs = parseInt(process.env.PG_STATEMENT_TIMEOUT_MS || '', 10) || 10000;
+  const idleTimeoutSec = parseInt(process.env.PG_IDLE_TIMEOUT || '', 10) || 30;
+  const maxRetries = parseInt(process.env.PG_CONNECT_RETRIES || '', 10) || 1;
+  const retryDelayMs = parseInt(process.env.PG_CONNECT_RETRY_DELAY_MS || '', 10) || 2000;
+  const statementTimeoutMs = parseInt(process.env.PG_STATEMENT_TIMEOUT_MS || '', 10) || 30000;
 
   rawLog(`[DB] Creating postgres client (ssl=${Boolean(ssl)}, max=${maxConns}, idle_timeout=${idleTimeoutSec}s, connect_timeout=${connectTimeoutSec}s, retries=${maxRetries}, statement_timeout=${statementTimeoutMs}ms)`);
   const initStart = Date.now();

@@ -25,7 +25,7 @@ const rawError = globalThis.console.error.bind(globalThis.console);
          }).$initPromise;
          if (initPromise) {
            rawLog('[DatabaseModule] Waiting for DB connection init (timeout=30s)...');
-           const timeoutMs = 30000;
+            const timeoutMs = 45000;
            const timeoutPromise = new Promise<never>((_, reject) => {
              setTimeout(() => {
                reject(new Error(`Database init timed out after ${timeoutMs}ms`));

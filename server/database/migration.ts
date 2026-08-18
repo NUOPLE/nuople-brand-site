@@ -24,8 +24,6 @@ let migrationDone = false;
 let migrationInProgress = false;
 
 const CREATE_TABLES_SQL = sql.raw(`
-  CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
   CREATE TABLE IF NOT EXISTS site_setting (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     setting_key VARCHAR(100) NOT NULL UNIQUE,
@@ -102,7 +100,7 @@ const TABLE_NAMES = [
   'admin',
 ];
 
-export async function runMigrations(db: unknown): Promise<void> {
+export async function runMigrations(db: unknown, timeoutMs = 5000): Promise<void> {
   rawLog('[Migration] start');
   if (migrationDone) {
     rawLog('[Migration] skipped (already completed)');
@@ -114,8 +112,18 @@ export async function runMigrations(db: unknown): Promise<void> {
   }
   migrationInProgress = true;
   rawLog('[DBMigration] Running CREATE TABLE IF NOT EXISTS migrations...');
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`Migration timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
   try {
-    await asDb(db).execute(CREATE_TABLES_SQL);
+    await Promise.race([
+      asDb(db).execute(CREATE_TABLES_SQL) as Promise<unknown>,
+      timeoutPromise,
+    ]);
     rawLog('[DBMigration] Tables created/verified successfully');
     logger.log('All tables verified (CREATE TABLE IF NOT EXISTS)');
     migrationDone = true;
@@ -146,7 +154,8 @@ export async function runMigrations(db: unknown): Promise<void> {
       current = cause;
     }
     logger.error(`Migration failed: ${msg}`);
-    throw err;
+    // Don't rethrow — migration failure should never block the app
+    rawError('[DBMigration] Migration failed but will NOT block app startup');
   }
 
   rawLog('[DBMigration] Verifying tables exist...');
@@ -162,24 +171,31 @@ export async function runMigrations(db: unknown): Promise<void> {
       `[DBMigration] Table check: found=[${Array.from(existing).join(', ')}], missing=[${missing.join(', ')}]`,
     );
     if (missing.length > 0) {
-      rawError(`[DBMigration] CRITICAL: Missing tables: ${missing.join(', ')}`);
-      throw new Error(`Tables missing after migration: ${missing.join(', ')}`);
+      rawError(`[DBMigration] WARNING: Missing tables: ${missing.join(', ')}`);
+      logger.warn(`Missing tables after migration attempt: ${missing.join(', ')}`);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     rawError(`[DBMigration] Verify tables FAILED: ${msg}`);
-    throw err;
   }
 }
 
-export async function ensureDefaultAdmin(db: unknown): Promise<void> {
+export async function ensureDefaultAdmin(db: unknown, timeoutMs = 5000): Promise<void> {
   rawLog('[DBMigration] Ensuring default admin user exists...');
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`ensureDefaultAdmin timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
   try {
-    const existing = await asDb(db)
-      .select({ id: admin.id })
-      .from(admin)
-      .where(eq(admin.username, DEFAULT_ADMIN_USERNAME))
-      .limit(1);
+    const existing = await Promise.race([
+      asDb(db)
+        .select({ id: admin.id })
+        .from(admin)
+        .where(eq(admin.username, DEFAULT_ADMIN_USERNAME))
+        .limit(1),
+      timeoutPromise,
+    ]);
 
     if (existing.length > 0) {
       rawLog('[DBMigration] Admin user already exists, skipping');
@@ -203,7 +219,7 @@ export async function ensureDefaultAdmin(db: unknown): Promise<void> {
     if (err instanceof Error && err.stack) {
       rawError(`[DBMigration] Stack: ${err.stack}`);
     }
-    logger.error(`Failed to create default admin: ${msg}`);
-    throw err;
+    logger.warn(`Failed to create default admin: ${msg} (non-fatal)`);
+    // Don't rethrow — admin creation failure should never block the app
   }
 }
