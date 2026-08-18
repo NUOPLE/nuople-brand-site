@@ -11,7 +11,7 @@ import type { PublicWorkDetail, PublicWorkListItem } from '@shared/api.interface
 import PublicNavbar from './PublicNavbar';
 import Footer from './Footer';
 import ChatWidget from './ChatWidget';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const WorkDetailPage = () => {
   const { id } = useParams<{ id: string }>();

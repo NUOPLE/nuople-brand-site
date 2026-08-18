@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, logPoolStats } from '../../database/connection';
-import { getCache, setCache, delCachePattern } from '../../common/cache';
+import { getCache, setCache, delCache, delCachePattern } from '../../common/cache';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import type {
@@ -11,7 +11,8 @@ import type {
 } from '@shared/api.interface';
 
 const DB_TIMEOUT_MS = 10000;
-const LIST_CACHE_TTL = 10;
+const LIST_CACHE_TTL = 5;
+const DETAIL_CACHE_TTL = 5;
 const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 
@@ -179,14 +180,16 @@ export class MessageService {
       if (updated.length === 0) {
         throw new NotFoundException('留言不存在');
       }
-      delCachePattern('message:');
-    } catch (err) {
-      if (err instanceof NotFoundException) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      rawError(`[MessageService.updateReadStatus] FAILED: ${msg}`);
-      throw err;
-    }
-  }
+       delCachePattern('message:');
+       delCachePattern('dashboard:');
+       rawLog('[CACHE] deleted message:* and dashboard:* after updateReadStatus');
+     } catch (err) {
+       if (err instanceof NotFoundException) throw err;
+       const msg = err instanceof Error ? err.message : String(err);
+       rawError(`[MessageService.updateReadStatus] FAILED: ${msg}`);
+       throw err;
+     }
+   }
 
   async reply(id: string, replyContent: string): Promise<{ repliedAt: string }> {
     rawLog(`[MessageService.reply] STEP1 enter id=${id}`);
@@ -212,8 +215,10 @@ export class MessageService {
         throw new NotFoundException('留言不存在');
       }
 
-      delCachePattern('message:');
-      return { repliedAt: new Date((updated[0] as any).replied_at).toISOString() };
+       delCachePattern('message:');
+       delCachePattern('dashboard:');
+       rawLog('[CACHE] deleted message:* and dashboard:* after reply');
+       return { repliedAt: new Date((updated[0] as any).replied_at).toISOString() };
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
       const msg = err instanceof Error ? err.message : String(err);
@@ -241,12 +246,14 @@ export class MessageService {
       if (deleted.length === 0) {
         throw new NotFoundException('留言不存在');
       }
-      delCachePattern('message:');
-    } catch (err) {
-      if (err instanceof NotFoundException) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      rawError(`[MessageService.delete] FAILED: ${msg}`);
-      throw err;
-    }
+       delCachePattern('message:');
+       delCachePattern('dashboard:');
+       rawLog('[CACHE] deleted message:* and dashboard:* after delete');
+     } catch (err) {
+       if (err instanceof NotFoundException) throw err;
+       const msg = err instanceof Error ? err.message : String(err);
+       rawError(`[MessageService.delete] FAILED: ${msg}`);
+       throw err;
+     }
   }
 }

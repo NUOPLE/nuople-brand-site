@@ -8,7 +8,7 @@ import {
   getPublicMessageDetail,
 } from '@client/src/api/public';
 import type { PublicKeywordRule, PublicMessageDetail } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 interface ChatMessage {
   id: string;
@@ -20,9 +20,9 @@ interface ChatMessage {
 
 const TRANSFER_TRIGGER_COUNT = 5;
 const POLL_INTERVAL_MS = 2000;
-const POLL_MAX_COUNT = 30;
+const POLL_MAX_COUNT = 150;
 const STORAGE_KEY = 'chat_message_id';
-const STORAGE_REPLIED_KEY = 'chat_message_replied';
+const STORAGE_REPLIED_ATS_KEY = 'chat_replied_ats';
 const STORAGE_HISTORY_KEY = 'chat_history';
 const STORAGE_UNMATCHED_KEY = 'chat_unmatched_count';
 
@@ -58,7 +58,7 @@ const ChatWidget = () => {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
   const pendingMessageIdRef = useRef<string | null>(null);
-  const shownReplyMsgIdRef = useRef<string | null>(null);
+  const shownRepliedAtsRef = useRef<Set<string>>(new Set());
   const isAtBottomRef = useRef(true);
 
   useEffect(() => {
@@ -122,56 +122,73 @@ const ChatWidget = () => {
     pollCountRef.current = 0;
   }, []);
 
-  const showHumanReply = useCallback((replyContent: string, replyId?: string) => {
-    const dedupKey = replyId || replyContent;
-    if (shownReplyMsgIdRef.current === dedupKey) {
-      logger.info('[ChatWidget] human reply DUPLICATE skipped:', dedupKey.slice(0, 30));
+  const showHumanReply = useCallback((replyContent: string, repliedAt: string) => {
+    if (shownRepliedAtsRef.current.has(repliedAt)) {
+      logger.info(`[ChatWidget] human reply DUPLICATE skipped, repliedAt=${repliedAt}`);
       return;
     }
-    shownReplyMsgIdRef.current = dedupKey;
-    const replyMsg = makeBotMsg(`【人工客服】${replyContent}`, 'human');
+    shownRepliedAtsRef.current.add(repliedAt);
+    try {
+      const arr = Array.from(shownRepliedAtsRef.current);
+      localStorage.setItem(STORAGE_REPLIED_ATS_KEY, JSON.stringify(arr));
+    } catch {
+      // ignore
+    }
+    const replyMsg: ChatMessage = {
+      id: `b-human-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'bot',
+      content: `【人工客服】${replyContent}`,
+      time: new Date(repliedAt).toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      source: 'human',
+    };
     setMessages((prev) => [...prev, replyMsg]);
-    logger.info('[ChatWidget] human reply shown:', replyContent.slice(0, 50));
+    logger.info(`[ChatWidget] human reply shown, repliedAt=${repliedAt}, content=${replyContent.slice(0, 30)}`);
   }, []);
 
   const pollReply = useCallback(async (messageId: string) => {
-    logger.info(`[ChatWidget] poll result: pollCount=${pollCountRef.current}`);
+    logger.info(`[ChatWidget] poll #${pollCountRef.current}, id=${messageId}`);
     try {
       const detail: PublicMessageDetail = await getPublicMessageDetail(messageId);
-      logger.info(`[ChatWidget] API response: ${JSON.stringify(detail)}`);
-      const hasReply = Boolean(detail.replyContent);
-      logger.info(`[ChatWidget] poll result: hasReply=${hasReply}`);
-       if (detail.replyContent) {
-         logger.info('[ChatWidget] pollReply: reply found, stopping poll');
-         clearPollTimer();
-         pendingMessageIdRef.current = null;
-         setPolling(false);
-         showHumanReply(detail.replyContent, messageId);
-         try {
-           localStorage.setItem(
-             STORAGE_REPLIED_KEY,
-             JSON.stringify({ id: messageId, replyContent: detail.replyContent, repliedAt: detail.repliedAt, time: Date.now() }),
-           );
-           localStorage.removeItem(STORAGE_KEY);
-           logger.info('[ChatWidget] saved reply to localStorage, cleared message id');
+      const hasReply = Boolean(detail.replyContent && detail.repliedAt);
 
-           setMessages((prev) => {
-             const replyMsg = makeBotMsg(`【人工客服】${detail.replyContent}`, 'human');
-             const hasHumanReply = prev.some((m: ChatMessage) => m.source === 'human');
-             if (hasHumanReply) {
-               logger.info('[ChatWidget] chat_history already has human reply, skip append');
-               return prev;
-             }
-             const updatedHistory = [...prev, replyMsg];
-             localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(updatedHistory));
-             logger.info(`[ChatWidget] chat_history updated with reply, total=${updatedHistory.length}`);
-             return updatedHistory;
-           });
-         } catch (storageErr) {
-           logger.error('[ChatWidget] save reply to localStorage FAILED:', String(storageErr));
-         }
-         return;
-       }
+      if (detail.replyContent && detail.repliedAt) {
+        const isNew = !shownRepliedAtsRef.current.has(detail.repliedAt);
+        logger.info(
+          `[ChatWidget] poll #${pollCountRef.current}, repliedAt=${detail.repliedAt}, isNew=${isNew ? 'yes' : 'no'}, replyCount=${shownRepliedAtsRef.current.size}`,
+        );
+        if (isNew) {
+          showHumanReply(detail.replyContent, detail.repliedAt);
+          try {
+            setMessages((prev) => {
+              const replyMsg: ChatMessage = {
+                id: `b-human-sync-${detail.repliedAt}`,
+                type: 'bot',
+                content: `【人工客服】${detail.replyContent}`,
+                time: new Date(detail.repliedAt!).toLocaleTimeString('zh-CN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+                source: 'human',
+              };
+              const alreadyInHistory = prev.some(
+                (m: ChatMessage) => m.source === 'human' && m.content === replyMsg.content,
+              );
+              if (alreadyInHistory) return prev;
+              const updatedHistory = [...prev, replyMsg];
+              localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(updatedHistory));
+              return updatedHistory;
+            });
+          } catch (storageErr) {
+            logger.error('[ChatWidget] save history FAILED:', String(storageErr));
+          }
+        }
+      } else {
+        logger.info(`[ChatWidget] poll #${pollCountRef.current}, no reply yet`);
+      }
+      void hasReply;
     } catch (err: unknown) {
       logger.error('[ChatWidget] pollReply FAILED:', String(err));
     }
@@ -180,6 +197,7 @@ const ChatWidget = () => {
     if (pollCountRef.current >= POLL_MAX_COUNT) {
       logger.info('[ChatWidget] poll max count reached, stopping');
       clearPollTimer();
+      pendingMessageIdRef.current = null;
       setPolling(false);
     }
   }, [clearPollTimer, showHumanReply]);
@@ -221,55 +239,40 @@ const ChatWidget = () => {
   const restoreFromStorage = useCallback(() => {
     try {
       const pendingId = localStorage.getItem(STORAGE_KEY);
-      const repliedRaw = localStorage.getItem(STORAGE_REPLIED_KEY);
+      const repliedAtsRaw = localStorage.getItem(STORAGE_REPLIED_ATS_KEY);
 
-      logger.info(`[ChatWidget] found message id in localStorage: ${pendingId || 'none'}`);
-      if (!pendingId) {
-        logger.info('[ChatWidget] no message id in localStorage');
-      }
+      logger.info(`[ChatWidget] restore: pendingId=${pendingId || 'none'}`);
 
-      const history = restoreHistoryFromStorage();
-      const hasHumanReplyInHistory = history.some((m) => m.source === 'human');
-
-      let repliedInfo: { id: string; replyContent: string; repliedAt?: string } | null = null;
-      if (repliedRaw) {
+      shownRepliedAtsRef.current = new Set<string>();
+      if (repliedAtsRaw) {
         try {
-          repliedInfo = JSON.parse(repliedRaw) as { id: string; replyContent: string; repliedAt?: string };
-          logger.info(`[ChatWidget] restore replied info: id=${repliedInfo.id}`);
+          const arr = JSON.parse(repliedAtsRaw) as string[];
+          if (Array.isArray(arr)) {
+            shownRepliedAtsRef.current = new Set(arr);
+            logger.info(`[ChatWidget] restored ${arr.length} repliedAt timestamps`);
+          }
         } catch {
-          repliedInfo = null;
+          // ignore
         }
       }
 
-      let finalHistory = history;
+      const history = restoreHistoryFromStorage();
 
-      if (repliedInfo && !hasHumanReplyInHistory) {
-        const replyMsg: ChatMessage = {
-          id: `b-restored-${repliedInfo.id}`,
-          type: 'bot',
-          content: `【人工客服】${repliedInfo.replyContent}`,
-          time: repliedInfo.repliedAt ? new Date(repliedInfo.repliedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '',
-          source: 'human',
-        };
-        finalHistory = [...finalHistory, replyMsg];
-        logger.info('[ChatWidget] appended restored human reply to history');
+      const humanRepliesInHistory = history.filter((m) => m.source === 'human');
+      if (humanRepliesInHistory.length > 0) {
+        for (const msg of humanRepliesInHistory) {
+          shownRepliedAtsRef.current.add(msg.id);
+        }
+        logger.info(`[ChatWidget] loaded ${humanRepliesInHistory.length} human replies from history`);
       }
 
-      if (finalHistory.length > 0) {
-        setMessages(finalHistory);
+      if (history.length > 0) {
+        setMessages(history);
       }
 
-      if (repliedInfo) {
-        shownReplyMsgIdRef.current = repliedInfo.id;
-        logger.info(`[ChatWidget] set shownReplyMsgIdRef=${repliedInfo.id}`);
-      }
-
-      if (pendingId && !repliedInfo) {
-        logger.info(`[ChatWidget] restore pending message: ${pendingId}`);
+      if (pendingId) {
+        logger.info(`[ChatWidget] restore: resuming polling for ${pendingId}`);
         startPolling(pendingId);
-      } else if (pendingId && repliedInfo) {
-        logger.info('[ChatWidget] already replied, skip polling on restore');
-        localStorage.removeItem(STORAGE_KEY);
       }
 
       try {
@@ -291,7 +294,7 @@ const ChatWidget = () => {
 
   useEffect(() => {
     if (open) {
-      shownReplyMsgIdRef.current = null;
+      shownRepliedAtsRef.current = new Set();
       isAtBottomRef.current = true;
       setShowNewMsgHint(false);
       restoreFromStorage();
@@ -299,7 +302,7 @@ const ChatWidget = () => {
     return () => {
       clearPollTimer();
       pendingMessageIdRef.current = null;
-      shownReplyMsgIdRef.current = null;
+      shownRepliedAtsRef.current = new Set();
     };
   }, [open, clearPollTimer, restoreFromStorage]);
 

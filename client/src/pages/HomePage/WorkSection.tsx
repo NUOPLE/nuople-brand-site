@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import Image from '@client/src/components/ui/image';
 import { getPublicWorkList } from '@client/src/api/public';
 import type { PublicWorkListItem, WorkCategory } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const CATEGORY_FILTERS: { value: string; label: string }[] = [
   { value: '', label: '全部' },

@@ -1,6 +1,6 @@
 // import { useState, useEffect } from 'react';
 // import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
-// import { logger } from '@lark-apaas/client-toolkit/logger';
+// import { logger } from '@/utils/logger';
 
 // interface RecordData {
 //   title?: string,

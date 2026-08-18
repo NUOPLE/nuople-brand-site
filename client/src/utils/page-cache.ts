@@ -1,4 +1,4 @@
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 interface CacheEntry<T> {
   data: T;

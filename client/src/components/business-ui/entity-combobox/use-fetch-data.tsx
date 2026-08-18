@@ -1,6 +1,6 @@
 'use client';
 
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 import { useCallback, useEffect, useState } from 'react';
 
 export type UseFetchDataOptions<T> = {

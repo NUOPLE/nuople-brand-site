@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Image,
@@ -14,9 +14,10 @@ import {
 import { axiosForBackend } from '@/api';
 import type { DashboardStats } from '@shared/api.interface';
 import { getPageCache, setPageCache, clearPageCache } from '@client/src/utils/page-cache';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const CACHE_KEY = 'admin:dashboard:stats';
+const AUTO_REFRESH_INTERVAL_MS = 30000;
 
 const categoryLabelMap: Record<string, string> = {
   logo: 'LOGO设计',
@@ -27,6 +28,7 @@ const categoryLabelMap: Record<string, string> = {
 const DashboardPage = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const autoRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadStats = useCallback(async (force = false) => {
     if (!force) {
@@ -56,6 +58,48 @@ const DashboardPage = () => {
 
   useEffect(() => {
     loadStats();
+  }, [loadStats]);
+
+  useEffect(() => {
+    const startAutoRefresh = () => {
+      if (autoRefreshTimerRef.current) return;
+      logger.info('[AUTO-REFRESH] dashboard start');
+      autoRefreshTimerRef.current = setInterval(() => {
+        if (document.visibilityState !== 'visible') {
+          logger.info('[AUTO-REFRESH] dashboard tick skipped (page hidden)');
+          return;
+        }
+        logger.info('[AUTO-REFRESH] dashboard tick (silent)');
+        clearPageCache(CACHE_KEY);
+        loadStats(true);
+      }, AUTO_REFRESH_INTERVAL_MS);
+    };
+
+    const stopAutoRefresh = () => {
+      if (autoRefreshTimerRef.current) {
+        clearInterval(autoRefreshTimerRef.current);
+        autoRefreshTimerRef.current = null;
+        logger.info('[AUTO-REFRESH] dashboard stop');
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        startAutoRefresh();
+      } else {
+        stopAutoRefresh();
+      }
+    };
+
+    if (document.visibilityState === 'visible') {
+      startAutoRefresh();
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      stopAutoRefresh();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [loadStats]);
 
   const formatDate = (dateStr: string) => {

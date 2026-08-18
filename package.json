@@ -150,7 +150,7 @@
     "@headlessui/react": "^2.2.9",
     "@heroicons/react": "^2.2.0",
     "@lark-apaas/fullstack-presets": "^1.1.0",
-    "@lark-apaas/fullstack-vite-preset": "^1.0.33",
+    "@lark-apaas/fullstack-vite-preset": "^1.0.34",
     "@nestjs/cli": "^10.4.9",
     "@nestjs/testing": "^10.4.20",
     "@reduxjs/toolkit": "^2.9.0",

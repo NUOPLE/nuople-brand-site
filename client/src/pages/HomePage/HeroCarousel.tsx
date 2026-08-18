@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from '@client/src/components/ui/image';
 import { getFeaturedWorks } from '@client/src/api/public';
 import type { PublicWorkListItem } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const HeroCarousel = () => {
   const [works, setWorks] = useState<PublicWorkListItem[]>([]);

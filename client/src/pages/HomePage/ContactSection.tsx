@@ -6,7 +6,7 @@ import { Input } from '@client/src/components/ui/input';
 import { Textarea } from '@client/src/components/ui/textarea';
 import { getPublicSiteSettings, submitPublicMessage } from '@client/src/api/public';
 import type { ContactInfo } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const ContactSection = () => {
   const [contact, setContact] = useState<ContactInfo | null>(null);

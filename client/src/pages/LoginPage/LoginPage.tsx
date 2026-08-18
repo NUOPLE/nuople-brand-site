@@ -16,7 +16,7 @@ import {
 import { Input } from '@client/src/components/ui/input';
 import { useAuth } from '@client/src/hooks/use-auth';
 import type { AxiosError } from 'axios';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const loginSchema = z.object({
   username: z.string().min(1, '请输入用户名'),

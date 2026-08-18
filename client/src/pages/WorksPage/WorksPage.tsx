@@ -29,7 +29,7 @@ import {
   deleteWork,
 } from '@client/src/api/works';
 import type { WorkListItem } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const CATEGORY_MAP: Record<string, string> = {
   logo: 'LOGO设计',

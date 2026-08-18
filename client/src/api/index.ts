@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { toast } from 'sonner';
 import type { AxiosError } from 'axios';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const UNAUTHORIZED_EVENT = 'app:unauthorized';
 const TOKEN_KEY = 'admin_token';

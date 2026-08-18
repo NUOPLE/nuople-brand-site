@@ -9,7 +9,7 @@ const rawLog = globalThis.console.log.bind(globalThis.console);
 const rawError = globalThis.console.error.bind(globalThis.console);
 
 const STATS_TIMEOUT_MS = 10000;
-const STATS_CACHE_TTL = 30;
+const STATS_CACHE_TTL = 15;
 const STATS_CACHE_KEY = 'dashboard:stats';
 
 const logger = new Logger('DashboardService');

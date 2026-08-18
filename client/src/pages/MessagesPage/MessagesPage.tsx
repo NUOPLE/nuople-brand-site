@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Eye,
   Trash2,
@@ -43,10 +43,11 @@ import type {
   MessageListResponse,
   MessageStatusFilter,
 } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 import { getPageCache, setPageCache, clearPageCache } from '@client/src/utils/page-cache';
 
 const PAGE_SIZE = 10;
+const AUTO_REFRESH_INTERVAL_MS = 30000;
 
 const formatDate = (dateStr: string): string => {
   const d = new Date(dateStr);
@@ -76,6 +77,10 @@ const MessagesPage = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string>('');
   const [deleteSubmitting, setDeleteSubmitting] = useState<boolean>(false);
+
+  const autoRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevTotalUnreadRef = useRef<number>(0);
+  const originalTitleRef = useRef<string>(document.title);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -119,6 +124,76 @@ const MessagesPage = () => {
   useEffect(() => {
     fetchList();
   }, [fetchList]);
+
+  useEffect(() => {
+    const startAutoRefresh = () => {
+      if (autoRefreshTimerRef.current) return;
+      logger.info('[AUTO-REFRESH] messages start');
+      autoRefreshTimerRef.current = setInterval(() => {
+        if (document.visibilityState !== 'visible') {
+          logger.info('[AUTO-REFRESH] messages tick skipped (page hidden)');
+          return;
+        }
+        logger.info('[AUTO-REFRESH] messages tick');
+        clearPageCache(cacheKey);
+        fetchList(true);
+      }, AUTO_REFRESH_INTERVAL_MS);
+    };
+
+    const stopAutoRefresh = () => {
+      if (autoRefreshTimerRef.current) {
+        clearInterval(autoRefreshTimerRef.current);
+        autoRefreshTimerRef.current = null;
+        logger.info('[AUTO-REFRESH] messages stop');
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        startAutoRefresh();
+        document.title = originalTitleRef.current;
+      } else {
+        stopAutoRefresh();
+      }
+    };
+
+    if (document.visibilityState === 'visible') {
+      startAutoRefresh();
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      stopAutoRefresh();
+      document.removeEventListener('visibilitychange', handleVisibility);
+      document.title = originalTitleRef.current;
+    };
+  }, [cacheKey, fetchList]);
+
+  useEffect(() => {
+    if (prevTotalUnreadRef.current > 0 && totalUnread > prevTotalUnreadRef.current) {
+      const newCount = totalUnread - prevTotalUnreadRef.current;
+      logger.info(`[AUTO-REFRESH] new unread messages detected: +${newCount}`);
+      if (document.visibilityState !== 'visible') {
+        let showUnread = true;
+        const blinkTimer = setInterval(() => {
+          showUnread = !showUnread;
+          document.title = showUnread
+            ? `(${totalUnread}) 留言管理 - 品牌CMS`
+            : originalTitleRef.current;
+        }, 1000);
+        const cleanup = () => {
+          clearInterval(blinkTimer);
+          document.title = originalTitleRef.current;
+          document.removeEventListener('visibilitychange', onVisible);
+        };
+        const onVisible = () => {
+          if (document.visibilityState === 'visible') cleanup();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+      }
+    }
+    prevTotalUnreadRef.current = totalUnread;
+  }, [totalUnread]);
 
   const openDetail = useCallback(async (id: string) => {
     setDrawerOpen(true);

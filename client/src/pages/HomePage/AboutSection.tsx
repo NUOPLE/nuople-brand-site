@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 import { getPublicSiteSettings } from '@client/src/api/public';
 import type { PublicSiteSettings } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const AboutSection = () => {
   const [settings, setSettings] = useState<PublicSiteSettings | null>(null);

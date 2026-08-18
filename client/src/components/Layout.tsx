@@ -41,6 +41,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/use-auth';
 import { UniversalLink } from '@lark-apaas/client-toolkit/components/UniversalLink';
 
+
 const navItems = [
   { path: '/admin/dashboard', label: '仪表盘', icon: LayoutDashboard },
   { path: '/admin/works', label: '作品管理', icon: Image },

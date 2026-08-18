@@ -19,7 +19,7 @@ import GalleryUpload from '@client/src/components/image-upload/GalleryUpload';
 
 import { getWorkById, createWork, updateWork } from '@client/src/api/works';
 import type { Work, WorkCategory, GalleryImage } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const CATEGORY_OPTIONS: { value: WorkCategory; label: string }[] = [
   { value: 'logo', label: 'LOGO设计' },

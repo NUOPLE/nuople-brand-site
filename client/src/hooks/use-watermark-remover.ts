@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const WATERMARK_KEYWORDS = ['妙搭', '由妙搭', 'MiaoDa', 'miaoda'];
 const WATERMARK_CLASS_HINTS = [

@@ -4,6 +4,8 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DRIZZLE_DATABASE } from '../../database/connection';
 import { getCache, setCache, delCachePattern } from '../../common/cache';
 
+const MESSAGE_DETAIL_CACHE_TTL = 5;
+
 import type {
   PublicWorkListItem,
   PublicWorkListResponse,
@@ -439,6 +441,12 @@ export class PublicService {
 
   async getMessageById(id: string): Promise<PublicMessageDetail> {
     rawLog(`[MSG_DEBUG] getMessageById ENTER id=${id}`);
+    const cacheKey = `public:message:${id}`;
+    const cached = getCache<PublicMessageDetail>(cacheKey);
+    if (cached) {
+      rawLog(`[PublicService] getMessageById cache hit id=${id}, hasReply=${Boolean(cached.replyContent)}`);
+      return cached;
+    }
     try {
       const sql = this.rawSql;
       const rows = await withTimeout(
@@ -456,13 +464,16 @@ export class PublicService {
         throw new NotFoundException('留言不存在');
       }
       const row = rows[0] as Record<string, unknown>;
-      return {
+      const result: PublicMessageDetail = {
         id: String(row.id),
         content: String(row.content ?? ''),
         replyContent: row.reply_content != null ? String(row.reply_content) : null,
         repliedAt: row.replied_at ? new Date(row.replied_at as string | Date).toISOString() : null,
         isRead: Boolean(row.is_read),
       };
+      rawLog(`[PublicService] getMessageById done id=${id}, hasReply=${Boolean(result.replyContent)}`);
+      setCache(cacheKey, result, MESSAGE_DETAIL_CACHE_TTL);
+      return result;
     } catch (err) {
       rawError(`[MSG_DEBUG] getMessageById FAILED: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
@@ -554,6 +565,8 @@ export class PublicService {
 
       rawLog(`[MSG_DEBUG] STEP6: submitMessage done, id=${rows[0]?.id}`);
       delCachePattern('message:');
+      delCachePattern('dashboard:');
+      rawLog('[CACHE] deleted message:* and dashboard:* after submit');
       return { success: true, id: rows[0]!.id };
     } catch (err) {
       rawError('[MSG_DEBUG] TOP-LEVEL CATCH in submitMessage');

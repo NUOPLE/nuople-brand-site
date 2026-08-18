@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 import { getPublicSiteSettings } from '@client/src/api/public';
 import type { ProcessStep } from '@shared/api.interface';
-import { logger } from '@lark-apaas/client-toolkit/logger';
+import { logger } from '@/utils/logger';
 
 const ProcessSection = () => {
   const [steps, setSteps] = useState<ProcessStep[]>([]);
