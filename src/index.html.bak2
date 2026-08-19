@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>诺普品牌 Design &amp; Art</title>
+  <meta name="description" content="诺普品牌 - 专注品牌视觉设计，提供标志设计、品牌形象、包装设计等服务。" />
+  <meta name="keywords" content="品牌设计,LOGO设计,标志设计,品牌形象,包装设计,诺普品牌" />
+  <link rel="icon" href="/favicon.svg" />
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/client/src/index.tsx"></script>
+</body>
+</html>
