@@ -10,19 +10,42 @@ const HeroCarousel = () => {
   const [works, setWorks] = useState<PublicWorkListItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
+    const timeoutId = setTimeout(() => {
+      if (mounted) {
+        setError(true);
+        setLoading(false);
+      }
+    }, 10000);
+
     const fetchWorks = async () => {
       try {
         const data = await getFeaturedWorks(5);
-        setWorks(data.items);
+        if (mounted) {
+          setWorks(data.items);
+          setError(false);
+        }
       } catch (err) {
         logger.error('fetch featured works failed', String(err));
+        if (mounted) {
+          setError(true);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+          clearTimeout(timeoutId);
+        }
       }
     };
     fetchWorks();
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   const goNext = useCallback(() => {
@@ -46,19 +69,26 @@ const HeroCarousel = () => {
   if (loading) {
     return (
       <section className="relative h-screen w-full bg-black/5 flex items-center justify-center">
-        <div className="text-black/40 text-sm tracking-wider">Loading...</div>
+        <div className="text-center">
+          <h1 className="text-4xl md:text-6xl font-light text-black/60 tracking-tight mb-4" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+            Brand &amp; Art
+          </h1>
+          <p className="text-black/40 text-sm tracking-wider">精选作品加载中</p>
+        </div>
       </section>
     );
   }
 
-  if (works.length === 0) {
+  if (error || works.length === 0) {
     return (
       <section className="relative h-screen w-full bg-black/5 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-4xl md:text-6xl font-light text-black/60 tracking-tight mb-4" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
-            Brand & Art
+            Brand &amp; Art
           </h1>
-          <p className="text-black/40 text-sm tracking-wider">精选作品加载中</p>
+          <p className="text-black/40 text-sm tracking-wider">
+            {error ? '加载失败，请刷新重试' : '暂无作品'}
+          </p>
         </div>
       </section>
     );

@@ -76,12 +76,48 @@ function isStylelintTarget(filePath) {
   return filePath.endsWith('.css');
 }
 
+const STYLELINT_CONFIG_FILES = [
+  '.stylelintrc',
+  '.stylelintrc.js',
+  '.stylelintrc.cjs',
+  '.stylelintrc.json',
+  'stylelint.config.js',
+];
+
+/**
+ * 老模板（fullstack-nestjs-template 1.x 时代）的应用跑不了 stylelint，跑了就挂、把 pre-commit
+ * 卡死。两种形态都实测过：
+ *
+ * - 缺 scripts.stylelint → `npm error Missing script: "stylelint"`
+ * - 缺 .stylelintrc.*    → `ConfigurationError: No configuration provided`
+ *
+ * 注意光判断 stylelint 装没装拦不住：@lark-apaas/fullstack-presets 的 dependencies 里有
+ * stylelint，只要 dep 了 presets 二进制就在。缺任一件就跳过这一步。
+ */
+function canRunStylelint() {
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+  } catch {
+    return false;
+  }
+
+  if (!pkg.scripts || !pkg.scripts.stylelint) return false;
+
+  return STYLELINT_CONFIG_FILES.some(file => fs.existsSync(path.join(cwd, file)));
+}
+
 async function runDefaultLint() {
   const taskSpecs = [
     [getBinName('npm'), ['run', 'eslint']],
     [getBinName('npm'), ['run', 'type:check']],
-    [getBinName('npm'), ['run', 'stylelint']],
   ];
+
+  if (canRunStylelint()) {
+    taskSpecs.push([getBinName('npm'), ['run', 'stylelint']]);
+  } else {
+    console.warn('[lint] Skip stylelint: missing scripts.stylelint or stylelint config');
+  }
 
   process.exit(await runTasksSerially(taskSpecs));
 }
@@ -120,7 +156,9 @@ async function runSelectiveLint(inputFiles) {
     taskSpecs.push([getBinName('npx'), ['eslint', '--quiet', ...eslintFiles]]);
   }
 
-  if (stylelintFiles.length > 0) {
+  if (stylelintFiles.length > 0 && !canRunStylelint()) {
+    console.warn('[lint] Skip stylelint: missing scripts.stylelint or stylelint config');
+  } else if (stylelintFiles.length > 0) {
     taskSpecs.push([getBinName('npx'), ['stylelint', '--quiet', ...stylelintFiles]]);
   }
 
